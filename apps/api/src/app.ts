@@ -12,6 +12,7 @@ import groupsRouter from './modules/groups/groups.routes';
 import { groupExpensesRouter, directExpensesRouter } from './modules/expenses/expenses.routes';
 import { groupBalancesRouter, dashboardRouter } from './modules/balances/balances.routes';
 import telegramRouter from './modules/telegram/telegram.routes';
+import friendsRouter from './modules/friends/friends.routes';
 
 export const app = express();
 
@@ -37,6 +38,7 @@ app.get('/health', (req, res) => {
 // 3. API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/friends', friendsRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/groups/:groupId/expenses', groupExpensesRouter);
 app.use('/api/groups/:groupId', groupBalancesRouter);

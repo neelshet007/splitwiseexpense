@@ -140,7 +140,7 @@ export class BalanceService {
 
     const groupIds = groups.map((g) => g.id);
 
-    // Calculate aggregated balances
+    // Calculate aggregated group balances
     let totalPaid = 0;
     let totalOwedToYou = 0;
     let totalYouOwe = 0;
@@ -159,10 +159,26 @@ export class BalanceService {
       }
     }
 
-    // Recent 10 expenses across user's groups
+    // Direct 1-to-1 Friends Balances
+    const { FriendsService } = await import('../friends/friends.service');
+    const friends = await FriendsService.listFriends(userId);
+
+    for (const friend of friends) {
+      totalPaid += friend.totalPaid;
+      if (friend.netBalance > 0) {
+        totalOwedToYou += friend.netBalance;
+      } else if (friend.netBalance < 0) {
+        totalYouOwe += Math.abs(friend.netBalance);
+      }
+    }
+
+    // Recent 10 expenses across user's groups & direct friend splits
     const recentExpensesRaw = await prisma.expense.findMany({
       where: {
-        groupId: { in: groupIds }
+        OR: [
+          { groupId: { in: groupIds } },
+          { groupId: null, splits: { some: { userId } } }
+        ]
       },
       include: {
         payer: true,
@@ -204,7 +220,8 @@ export class BalanceService {
       totalYouOwe,
       netBalance: totalOwedToYou - totalYouOwe,
       recentExpenses,
-      groups
+      groups,
+      friends
     };
   }
 }

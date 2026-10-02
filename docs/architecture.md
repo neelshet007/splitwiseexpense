@@ -40,11 +40,12 @@ The Expense Splitting Application is a private, production-ready, mobile-first f
 
 ## 1. Architectural Principles
 
-1. **Modular Monolith**: All backend domain logic lives in a single Express codebase structured cleanly by domain module (`auth`, `users`, `groups`, `expenses`, `balances`, `telegram`, `monthly-summary`).
+1. **Modular Monolith**: All backend domain logic lives in a single Express codebase structured cleanly by domain module (`auth`, `users`, `friends`, `groups`, `expenses`, `balances`, `telegram`, `monthly-summary`).
 2. **Transaction Integrity**: Financial mutations (expenses, splits) execute inside strict PostgreSQL transactions (`prisma.$transaction`).
-3. **Derived Balances (No Stored Balance Fallacy)**: Balances are strictly computed on-demand from immutable financial transactions (`Expense`, `ExpenseSplit`, `paidBy`). There are no cached running balance columns that can drift out of sync.
-4. **Resilient Decoupling**: External integrations (Telegram notifications, SMTP password reset) are executed asynchronously post-commit. A failure in Telegram or SMTP never rolls back financial transactions.
-5. **Zero Heavy Infrastructure**: Runs on standard Node.js + PostgreSQL. Background tasks (e.g. monthly settlement summary) utilize standard in-process scheduling (`node-cron`) with database idempotency locks.
+3. **Dual Expense Scopes (Groups & Direct Friends)**: Direct expenses between friends do not require or force creating artificial groups (`expense.groupId = null`). Both group settlements and direct friend balances operate independently.
+4. **Derived Balances (No Stored Balance Fallacy)**: Balances are strictly computed on-demand from immutable financial transactions (`Expense`, `ExpenseSplit`, `paidBy`). There are no cached running balance columns that can drift out of sync.
+5. **Resilient Decoupling**: External integrations (Telegram notifications, SMTP password reset) are executed asynchronously post-commit. A failure in Telegram or SMTP never rolls back financial transactions.
+6. **Zero Heavy Infrastructure**: Runs on standard Node.js + PostgreSQL. Background tasks (e.g. monthly settlement summary) utilize standard in-process scheduling (`node-cron`) with database idempotency locks.
 
 ---
 
@@ -114,6 +115,12 @@ All monetary amounts are treated as **integers in minor units (paise/cents)** ac
 Computes net balance per user:
 $$\text{Net Balance}_i = \sum \text{Paid}_i - \sum \text{Share}_i$$
 A deterministic greedy algorithm pairs the largest debtor with the largest creditor iteratively, generating the minimum number of bank transfers needed to settle all debts.
+
+### 4.4 Direct Friend Expenses vs Group Expenses
+To maintain a natural human experience without requiring artificial groups for simple 1-to-1 interactions:
+- **Direct Expense (`expense.groupId = null`)**: Represents an expenditure shared directly with a friend (e.g. coffee, cab, dinner). Backend validation ensures the creator and split participants share an active symmetric friendship.
+- **Group Expense (`expense.groupId !== null`)**: Represents group expenditures (e.g. Goa trip, hostel, flatmates). Backend validation guarantees all participants are verified group members.
+- **Balance Scopes**: Direct friend balances and group balances are evaluated independently so members can settle individual balances without conflating group trip tabs.
 
 ---
 

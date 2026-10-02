@@ -6,43 +6,75 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { GroupItem, SplitType } from '@splitwise/types';
+import { GroupItem, FriendItem, SplitType } from '@splitwise/types';
 import { AppShell } from '@/components/layout/AppShell';
 import { formatMinorCurrency } from '@/lib/utils';
-import { ArrowLeft, Check, AlertCircle, Loader2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Check,
+  AlertCircle,
+  Loader2,
+  User,
+  Users,
+  UserCheck
+} from 'lucide-react';
 
 function AddExpenseForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialGroupId = searchParams.get('groupId') || '';
+  const initialFriendId = searchParams.get('friendId') || '';
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const [selectedGroupId, setSelectedGroupId] = useState(initialGroupId);
+  // Mode: 'FRIEND' (1-to-1 direct) or 'GROUP'
+  const [splitMode, setSplitMode] = useState<'FRIEND' | 'GROUP'>(
+    initialGroupId ? 'GROUP' : initialFriendId ? 'FRIEND' : 'FRIEND'
+  );
+
+  // Common inputs
   const [description, setDescription] = useState('');
   const [amountStr, setAmountStr] = useState('');
   const [paidBy, setPaidBy] = useState('');
   const [splitType, setSplitType] = useState<SplitType>('EQUAL');
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  // 1-to-1 Friend Mode state
+  const [selectedFriendId, setSelectedFriendId] = useState(initialFriendId);
+
+  // Group Mode state
+  const [selectedGroupId, setSelectedGroupId] = useState(initialGroupId);
   const [selectedMembers, setSelectedMembers] = useState<Record<string, boolean>>({});
   const [exactAmounts, setExactAmounts] = useState<Record<string, string>>({});
   const [percentages, setPercentages] = useState<Record<string, string>>({});
-  const [serverError, setServerError] = useState<string | null>(null);
 
-  // Fetch all groups
+  // 1. Fetch Friends
+  const { data: friends, isLoading: friendsLoading } = useQuery<FriendItem[]>({
+    queryKey: ['friends'],
+    queryFn: () => apiFetch<FriendItem[]>('/api/friends')
+  });
+
+  // 2. Fetch Groups
   const { data: groups, isLoading: groupsLoading } = useQuery<GroupItem[]>({
     queryKey: ['groups'],
     queryFn: () => apiFetch<GroupItem[]>('/api/groups')
   });
 
-  // Current selected group
+  // Auto-select first friend if available
+  useEffect(() => {
+    if (friends && friends.length > 0 && !selectedFriendId) {
+      setSelectedFriendId(friends[0].friendId);
+    }
+  }, [friends, selectedFriendId]);
+
+  // Active selected group
   const activeGroup = groups?.find((g) => g.id === selectedGroupId) || groups?.[0];
 
   useEffect(() => {
     if (activeGroup) {
-      setSelectedGroupId(activeGroup.id);
-      if (!paidBy && user) {
-        setPaidBy(user.id);
-      }
+      if (!selectedGroupId) setSelectedGroupId(activeGroup.id);
+      if (!paidBy && user) setPaidBy(user.id);
+
       // Select all members by default
       const initialSelected: Record<string, boolean> = {};
       activeGroup.members.forEach((m) => {
@@ -50,17 +82,70 @@ function AddExpenseForm() {
       });
       setSelectedMembers(initialSelected);
     }
-  }, [activeGroup, paidBy, user]);
+  }, [activeGroup, paidBy, user, selectedGroupId]);
+
+  // Selected friend object
+  const activeFriend = friends?.find((f) => f.friendId === selectedFriendId);
 
   const totalAmountMinor = Math.round((parseFloat(amountStr) || 0) * 100);
-  const activeParticipantIds = Object.keys(selectedMembers).filter((id) => selectedMembers[id]);
 
-  // Real-time split calculations
+  // Calculate Splits
   let calculatedSplits: { userId: string; name: string; amountOwed: number }[] = [];
   let validationError: string | null = null;
 
-  if (totalAmountMinor > 0 && activeParticipantIds.length > 0 && activeGroup) {
+  if (splitMode === 'FRIEND' && activeFriend && user && totalAmountMinor > 0) {
     if (splitType === 'EQUAL') {
+      // 50 / 50 split between you and your friend
+      const base = Math.floor(totalAmountMinor / 2);
+      const remainder = totalAmountMinor % 2;
+
+      calculatedSplits = [
+        {
+          userId: user.id,
+          name: 'You',
+          amountOwed: base + remainder
+        },
+        {
+          userId: activeFriend.friendId,
+          name: activeFriend.friend.name,
+          amountOwed: base
+        }
+      ];
+    } else if (splitType === 'EXACT') {
+      const myAmount = Math.round((parseFloat(exactAmounts[user.id] || '0') || 0) * 100);
+      const friendAmount = Math.round((parseFloat(exactAmounts[activeFriend.friendId] || '0') || 0) * 100);
+
+      calculatedSplits = [
+        { userId: user.id, name: 'You', amountOwed: myAmount },
+        { userId: activeFriend.friendId, name: activeFriend.friend.name, amountOwed: friendAmount }
+      ];
+
+      if (myAmount + friendAmount !== totalAmountMinor) {
+        const diff = (totalAmountMinor - (myAmount + friendAmount)) / 100;
+        validationError = diff > 0 ? `₹${diff.toFixed(2)} left to allocate` : `₹${Math.abs(diff).toFixed(2)} over allocated`;
+      }
+    } else if (splitType === 'PERCENTAGE') {
+      const myPct = parseFloat(percentages[user.id] || '50') || 0;
+      const friendPct = parseFloat(percentages[activeFriend.friendId] || '50') || 0;
+
+      const myVal = Math.round((myPct / 100) * totalAmountMinor);
+      const friendVal = totalAmountMinor - myVal;
+
+      calculatedSplits = [
+        { userId: user.id, name: 'You', amountOwed: myVal },
+        { userId: activeFriend.friendId, name: activeFriend.friend.name, amountOwed: friendVal }
+      ];
+
+      if (Math.abs(myPct + friendPct - 100) > 0.01) {
+        validationError = `Percentages sum to ${(myPct + friendPct).toFixed(1)}% (must be 100%)`;
+      }
+    }
+  } else if (splitMode === 'GROUP' && activeGroup && totalAmountMinor > 0) {
+    const activeParticipantIds = Object.keys(selectedMembers).filter((id) => selectedMembers[id]);
+
+    if (activeParticipantIds.length === 0) {
+      validationError = 'Please select at least one group member.';
+    } else if (splitType === 'EQUAL') {
       const count = activeParticipantIds.length;
       const base = Math.floor(totalAmountMinor / count);
       const remainder = totalAmountMinor % count;
@@ -124,18 +209,25 @@ function AddExpenseForm() {
     }
   }
 
+  // Mutation
   const createExpenseMutation = useMutation({
     mutationFn: (payload: any) =>
-      apiFetch(`/api/groups/${selectedGroupId}/expenses`, {
+      apiFetch('/api/expenses', {
         method: 'POST',
         body: JSON.stringify(payload)
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['group-expenses', selectedGroupId] });
-      queryClient.invalidateQueries({ queryKey: ['group-balances', selectedGroupId] });
-      queryClient.invalidateQueries({ queryKey: ['group-settlements', selectedGroupId] });
+      queryClient.invalidateQueries({ queryKey: ['friends'] });
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['group-expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['group-balances'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
-      router.push(`/groups/${selectedGroupId}`);
+
+      if (splitMode === 'GROUP' && selectedGroupId) {
+        router.push(`/groups/${selectedGroupId}`);
+      } else {
+        router.push('/dashboard');
+      }
     },
     onError: (err: any) => {
       setServerError(err.message || 'Failed to create expense');
@@ -144,13 +236,14 @@ function AddExpenseForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (totalAmountMinor <= 0 || activeParticipantIds.length === 0 || validationError) return;
+    if (totalAmountMinor <= 0 || validationError || calculatedSplits.length === 0) return;
 
     const payload = {
+      groupId: splitMode === 'GROUP' ? selectedGroupId : null,
       description: description.trim(),
       totalAmount: totalAmountMinor,
       splitType,
-      paidBy,
+      paidBy: paidBy || user?.id,
       splits: calculatedSplits.map((s) => ({
         userId: s.userId,
         amountOwed: s.amountOwed,
@@ -162,7 +255,7 @@ function AddExpenseForm() {
     createExpenseMutation.mutate(payload);
   };
 
-  if (groupsLoading) {
+  if (friendsLoading || groupsLoading) {
     return (
       <div className="p-8 text-center">
         <Loader2 className="w-8 h-8 animate-spin mx-auto text-emerald-500" />
@@ -170,28 +263,57 @@ function AddExpenseForm() {
     );
   }
 
-  if (!groups || groups.length === 0) {
-    return (
-      <div className="px-5 pt-8 text-center">
-        <p className="text-sm text-slate-500 mb-4">You need to be in a group to add an expense.</p>
-        <Link href="/groups" className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-semibold">
-          Go to Groups
-        </Link>
-      </div>
-    );
-  }
-
   return (
     <div className="px-5 pt-6 pb-6">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <Link
-          href={selectedGroupId ? `/groups/${selectedGroupId}` : '/dashboard'}
+      <div className="flex items-center gap-3 mb-5">
+        <button
+          onClick={() => router.back()}
           className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300"
         >
           <ArrowLeft className="w-5 h-5" />
-        </Link>
+        </button>
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">Add Expense</h1>
+      </div>
+
+      {/* Mode Selector (Friend vs Group) */}
+      <div className="mb-6">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+          Who is this with?
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setSplitMode('FRIEND')}
+            className={`p-3.5 rounded-2xl border text-left flex items-center gap-3 transition-all ${
+              splitMode === 'FRIEND'
+                ? 'border-slate-900 dark:border-emerald-500 bg-slate-900 text-white dark:bg-emerald-500/10 dark:text-emerald-300 shadow-md'
+                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+            }`}
+          >
+            <UserCheck className="w-5 h-5" />
+            <div>
+              <p className="text-xs font-bold">A Friend</p>
+              <p className="text-[10px] opacity-75">Quick 1-to-1 split</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSplitMode('GROUP')}
+            className={`p-3.5 rounded-2xl border text-left flex items-center gap-3 transition-all ${
+              splitMode === 'GROUP'
+                ? 'border-slate-900 dark:border-emerald-500 bg-slate-900 text-white dark:bg-emerald-500/10 dark:text-emerald-300 shadow-md'
+                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+            }`}
+          >
+            <Users className="w-5 h-5" />
+            <div>
+              <p className="text-xs font-bold">A Group</p>
+              <p className="text-[10px] opacity-75">Trips & flatmates</p>
+            </div>
+          </button>
+        </div>
       </div>
 
       {serverError && (
@@ -202,34 +324,81 @@ function AddExpenseForm() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Select Group */}
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-            Group
-          </label>
-          <select
-            value={selectedGroupId}
-            onChange={(e) => setSelectedGroupId(e.target.value)}
-            className="w-full px-3.5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          >
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name} ({g.members.length} members)
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Choose Target Friend or Group */}
+        {splitMode === 'FRIEND' ? (
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Choose Friend
+              </label>
+              <Link href="/friends" className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline">
+                + Add new friend
+              </Link>
+            </div>
+
+            {(!friends || friends.length === 0) ? (
+              <div className="p-4 rounded-xl bg-amber-50 text-amber-800 text-xs border border-amber-200">
+                No friends added yet. Please{' '}
+                <Link href="/friends" className="font-bold underline">
+                  add a friend
+                </Link>{' '}
+                first.
+              </div>
+            ) : (
+              <select
+                value={selectedFriendId}
+                onChange={(e) => setSelectedFriendId(e.target.value)}
+                className="w-full px-3.5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {friends.map((f) => (
+                  <option key={f.friendId} value={f.friendId}>
+                    {f.friend.name} ({f.friend.email})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Choose Group
+              </label>
+              <Link href="/groups" className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline">
+                + Create new group
+              </Link>
+            </div>
+
+            {(!groups || groups.length === 0) ? (
+              <div className="p-4 rounded-xl bg-amber-50 text-amber-800 text-xs border border-amber-200">
+                No groups found. Please create a group first.
+              </div>
+            ) : (
+              <select
+                value={selectedGroupId}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
+                className="w-full px-3.5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name} ({g.members.length} members)
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
 
         {/* Description */}
         <div>
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-            What was it for?
+            What was it?
           </label>
           <input
             type="text"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="e.g. Dinner, Cab, Groceries, Movie"
+            placeholder="e.g. Dinner, Cab, Coffee, Groceries"
             required
             className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
@@ -259,17 +428,28 @@ function AddExpenseForm() {
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
             Paid by
           </label>
-          <select
-            value={paidBy}
-            onChange={(e) => setPaidBy(e.target.value)}
-            className="w-full px-3.5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          >
-            {activeGroup?.members.map((m) => (
-              <option key={m.userId} value={m.userId}>
-                {m.user.name} {m.userId === user?.id && '(You)'}
-              </option>
-            ))}
-          </select>
+          {splitMode === 'FRIEND' ? (
+            <select
+              value={paidBy || user?.id}
+              onChange={(e) => setPaidBy(e.target.value)}
+              className="w-full px-3.5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value={user?.id}>You paid</option>
+              {activeFriend && <option value={activeFriend.friendId}>{activeFriend.friend.name} paid</option>}
+            </select>
+          ) : (
+            <select
+              value={paidBy || user?.id}
+              onChange={(e) => setPaidBy(e.target.value)}
+              className="w-full px-3.5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {activeGroup?.members.map((m) => (
+                <option key={m.userId} value={m.userId}>
+                  {m.user.name} {m.userId === user?.id && '(You)'}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Split Type Selector */}
@@ -289,97 +469,131 @@ function AddExpenseForm() {
                     : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
                 }`}
               >
-                {type === 'EQUAL' ? 'Equal' : type === 'EXACT' ? 'Exact ₹' : 'Percent %'}
+                {type === 'EQUAL' ? (splitMode === 'FRIEND' ? '50 / 50' : 'Equal') : type === 'EXACT' ? 'Exact ₹' : 'Percent %'}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Participants Selection & Breakdown */}
-        <div className="pt-2">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-            Split Between ({activeParticipantIds.length} selected)
-          </label>
-          <div className="space-y-2">
-            {activeGroup?.members.map((m) => {
-              const isSelected = !!selectedMembers[m.userId];
-              const splitResult = calculatedSplits.find((s) => s.userId === m.userId);
-
-              return (
-                <div
-                  key={m.userId}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800"
-                >
-                  <label className="flex items-center gap-2.5 cursor-pointer flex-1">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={(e) =>
-                        setSelectedMembers((prev) => ({
-                          ...prev,
-                          [m.userId]: e.target.checked
-                        }))
-                      }
-                      className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-400 accent-emerald-500"
-                    />
-                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                      {m.user.name} {m.userId === user?.id && '(You)'}
-                    </span>
-                  </label>
-
-                  {/* Input or Calculated Display */}
-                  {isSelected && (
-                    <div className="w-28 text-right">
-                      {splitType === 'EQUAL' && (
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                          {splitResult ? formatMinorCurrency(splitResult.amountOwed) : '₹0'}
-                        </span>
-                      )}
-
-                      {splitType === 'EXACT' && (
-                        <div className="relative">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">₹</span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={exactAmounts[m.userId] || ''}
-                            onChange={(e) =>
-                              setExactAmounts((prev) => ({
-                                ...prev,
-                                [m.userId]: e.target.value
-                              }))
-                            }
-                            placeholder="0"
-                            className="w-full pl-5 pr-2 py-1.5 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                          />
-                        </div>
-                      )}
-
-                      {splitType === 'PERCENTAGE' && (
-                        <div className="relative">
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={percentages[m.userId] || ''}
-                            onChange={(e) =>
-                              setPercentages((prev) => ({
-                                ...prev,
-                                [m.userId]: e.target.value
-                              }))
-                            }
-                            placeholder="0"
-                            className="w-full pr-5 pl-2 py-1.5 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                          />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
+        {/* Live Calculation / Real-time Breakdown */}
+        {splitMode === 'FRIEND' && activeFriend && totalAmountMinor > 0 && (
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+              Split Summary
+            </h4>
+            <div className="space-y-2">
+              {calculatedSplits.map((s) => (
+                <div key={s.userId} className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-900 dark:text-white">{s.name}</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">
+                    {formatMinorCurrency(s.amountOwed)}
+                  </span>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              {(paidBy || user?.id) === user?.id ? (
+                <span>
+                  {activeFriend.friend.name} will owe you{' '}
+                  {formatMinorCurrency(calculatedSplits.find((s) => s.userId === activeFriend.friendId)?.amountOwed || 0)}
+                </span>
+              ) : (
+                <span className="text-rose-600 dark:text-rose-400">
+                  You will owe {activeFriend.friend.name}{' '}
+                  {formatMinorCurrency(calculatedSplits.find((s) => s.userId === user?.id)?.amountOwed || 0)}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Group Participants Selector */}
+        {splitMode === 'GROUP' && (
+          <div className="pt-2">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+              Split Between Group Members
+            </label>
+            <div className="space-y-2">
+              {activeGroup?.members.map((m) => {
+                const isSelected = !!selectedMembers[m.userId];
+                const splitResult = calculatedSplits.find((s) => s.userId === m.userId);
+
+                return (
+                  <div
+                    key={m.userId}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800"
+                  >
+                    <label className="flex items-center gap-2.5 cursor-pointer flex-1">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) =>
+                          setSelectedMembers((prev) => ({
+                            ...prev,
+                            [m.userId]: e.target.checked
+                          }))
+                        }
+                        className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-400 accent-emerald-500"
+                      />
+                      <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                        {m.user.name} {m.userId === user?.id && '(You)'}
+                      </span>
+                    </label>
+
+                    {isSelected && (
+                      <div className="w-28 text-right">
+                        {splitType === 'EQUAL' && (
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            {splitResult ? formatMinorCurrency(splitResult.amountOwed) : '₹0'}
+                          </span>
+                        )}
+
+                        {splitType === 'EXACT' && (
+                          <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">₹</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={exactAmounts[m.userId] || ''}
+                              onChange={(e) =>
+                                setExactAmounts((prev) => ({
+                                  ...prev,
+                                  [m.userId]: e.target.value
+                                }))
+                              }
+                              placeholder="0"
+                              className="w-full pl-5 pr-2 py-1.5 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                            />
+                          </div>
+                        )}
+
+                        {splitType === 'PERCENTAGE' && (
+                          <div className="relative">
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={percentages[m.userId] || ''}
+                              onChange={(e) =>
+                                setPercentages((prev) => ({
+                                  ...prev,
+                                  [m.userId]: e.target.value
+                                }))
+                              }
+                              placeholder="0"
+                              className="w-full pr-5 pl-2 py-1.5 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Validation Error Banner */}
         {validationError && (
@@ -388,7 +602,7 @@ function AddExpenseForm() {
           </div>
         )}
 
-        {/* Submit Button */}
+        {/* Submit Action */}
         <button
           type="submit"
           disabled={createExpenseMutation.isPending || totalAmountMinor <= 0 || !!validationError}
@@ -399,7 +613,7 @@ function AddExpenseForm() {
           ) : (
             <>
               <Check className="w-5 h-5" />
-              <span>Save Expense</span>
+              <span>Add Expense</span>
             </>
           )}
         </button>

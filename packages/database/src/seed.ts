@@ -10,6 +10,7 @@ async function main() {
   await prisma.monthlySummaryLog.deleteMany();
   await prisma.expenseSplit.deleteMany();
   await prisma.expense.deleteMany();
+  await prisma.friendship.deleteMany();
   await prisma.groupMember.deleteMany();
   await prisma.group.deleteMany();
   await prisma.telegramConnectToken.deleteMany();
@@ -56,6 +57,16 @@ async function main() {
   });
 
   console.log(`✓ Created 3 users: ${neel.name}, ${rahul.name}, ${aman.name}`);
+
+  // Create Friendships
+  await prisma.friendship.createMany({
+    data: [
+      { requesterId: neel.id, receiverId: rahul.id, status: 'ACCEPTED' },
+      { requesterId: neel.id, receiverId: aman.id, status: 'ACCEPTED' },
+      { requesterId: rahul.id, receiverId: aman.id, status: 'ACCEPTED' }
+    ]
+  });
+  console.log('✓ Created friendships between Neel, Rahul, and Aman');
 
   // 2. Create Group
   const group = await prisma.group.create({
@@ -182,7 +193,26 @@ async function main() {
     }
   });
 
-  console.log('✓ Created 4 realistic expenses (Equal, Exact, and Percentage splits)');
+  // Expense 5: Direct 1-to-1 Expense (No group: Coffee with Rahul, ₹240 = 24000 minor units)
+  await prisma.expense.create({
+    data: {
+      groupId: null,
+      description: 'Third Wave Coffee',
+      totalAmount: 24000,
+      splitType: 'EQUAL',
+      paidBy: neel.id,
+      createdBy: neel.id,
+      expenseDate: new Date('2026-10-02T19:00:00Z'),
+      splits: {
+        create: [
+          { userId: neel.id, amountOwed: 12000 },
+          { userId: rahul.id, amountOwed: 12000 }
+        ]
+      }
+    }
+  });
+
+  console.log('✓ Created 4 group expenses + 1 direct 1-to-1 friend expense');
   console.log('✨ Seed complete! Default password for all users: Password@123');
 }
 

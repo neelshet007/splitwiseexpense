@@ -22,9 +22,10 @@ erDiagram
     User ||--o{ ExpenseSplit : "owes share in"
     User ||--o{ PasswordReset : "requests"
     User ||--o{ TelegramConnectToken : "generates"
+    User ||--o{ Friendship : "requests / receives friendship"
 
     Group ||--o{ GroupMember : "has members"
-    Group ||--o{ Expense : "records expenses"
+    Group ||--o{ Expense : "records expenses (nullable for direct)"
     Group ||--o{ MonthlySummaryLog : "records summaries"
 
     Expense ||--o{ ExpenseSplit : "divided into"
@@ -37,6 +38,15 @@ erDiagram
         string telegramChatId UK
         string telegramUsername
         boolean telegramConnected
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    Friendship {
+        string id PK
+        string requesterId FK
+        string receiverId FK
+        string status
         datetime createdAt
         datetime updatedAt
     }
@@ -75,7 +85,7 @@ erDiagram
 
     Expense {
         string id PK
-        string groupId FK
+        string groupId FK_Nullable
         string description
         int totalAmount
         string splitType
@@ -131,6 +141,16 @@ Short-lived temporary connection tokens for deep linking into `/start <token>`.
 - `tokenHash` (VARCHAR 64): SHA-256 hash of the random hex token
 - `expiresAt` (TIMESTAMPTZ): 15-minute validity window
 
+### `Friendship`
+Maintains symmetric user-to-user friendships without forcing artificial groups.
+- `id` (UUID / cuid): Primary key
+- `requesterId` (FK -> User.id, CASCADE): Initiating user
+- `receiverId` (FK -> User.id, CASCADE): Target user
+- `status` (VARCHAR 20): `PENDING`, `ACCEPTED`, `REJECTED`, `BLOCKED`
+- `createdAt`, `updatedAt` (TIMESTAMPTZ)
+- **Constraint**: `UNIQUE(requesterId, receiverId)`
+- **Symmetric Invariant**: Query logic checks both directions `(requesterId = A AND receiverId = B) OR (requesterId = B AND receiverId = A)` to prevent redundant duplicate friendship rows.
+
 ### `Group`
 Represents an expense-sharing circle (e.g. "Flatmates", "Goa Trip").
 - `id` (UUID / cuid): Primary key
@@ -147,9 +167,11 @@ Join table establishing many-to-many relationship between Users and Groups.
 - **Constraint**: `UNIQUE(groupId, userId)`
 
 ### `Expense`
-Stores the overarching expense transaction.
+Stores the overarching expense transaction. Supports both **Group Expenses** and **Direct Friend Expenses**.
 - `id` (UUID / cuid): Primary key
-- `groupId` (FK -> Group.id, CASCADE)
+- `groupId` (FK -> Group.id, CASCADE, Nullable):
+  - When `groupId !== null`: Represents a **Group Expense**.
+  - When `groupId === null`: Represents a **Direct Friend Expense**. No fake group is created.
 - `description` (VARCHAR 255): Expense purpose (e.g. "Dinner", "Cab")
 - `totalAmount` (INTEGER): Total amount in minor units (paise/cents)
 - `splitType` (VARCHAR 20): `EQUAL`, `EXACT`, or `PERCENTAGE`
@@ -157,6 +179,10 @@ Stores the overarching expense transaction.
 - `createdBy` (FK -> User.id): Member who entered the record
 - `expenseDate` (TIMESTAMPTZ): Date the expenditure occurred
 - `createdAt`, `updatedAt` (TIMESTAMPTZ)
+
+#### Direct Expense Validation Rules (Mandatory Guarantee)
+- **If `groupId` exists**: All participants (payer and splits) must belong to the specified group (`GroupMember`).
+- **If `groupId` is null**: Expense must be between valid connected users. The payer and split recipients must have an active friendship or direct relationship.
 
 ### `ExpenseSplit`
 Itemizes the exact liability for each participant in an expense.

@@ -98,29 +98,48 @@ export class ExpensesService {
     throw new ValidationError(`Unsupported split type: ${splitType}`);
   }
 
-  static async createExpense(groupId: string, createdByUserId: string, data: CreateExpenseInput): Promise<ExpenseItem> {
-    // 1. Validate Group & Memberships inside Transaction
+  static async createExpense(
+    groupId: string | null | undefined,
+    createdByUserId: string,
+    data: CreateExpenseInput
+  ): Promise<ExpenseItem> {
+    const targetGroupId = groupId || data.groupId || null;
+
+    // 1. Validate Group (if group expense) or Participants (if direct expense) inside Transaction
     const createdExpense = await prisma.$transaction(async (tx) => {
-      const group = await tx.group.findUnique({
-        where: { id: groupId },
-        include: { members: true }
-      });
+      if (targetGroupId) {
+        const group = await tx.group.findUnique({
+          where: { id: targetGroupId },
+          include: { members: true }
+        });
 
-      if (!group) {
-        throw new NotFoundError('Group not found');
-      }
+        if (!group) {
+          throw new NotFoundError('Group not found');
+        }
 
-      const memberIds = new Set(group.members.map((m) => m.userId));
+        const memberIds = new Set(group.members.map((m) => m.userId));
 
-      // Validate Payer
-      if (!memberIds.has(data.paidBy)) {
-        throw new ValidationError('Payer must be an active member of the group.');
-      }
+        // Validate Payer
+        if (!memberIds.has(data.paidBy)) {
+          throw new ValidationError('Payer must be an active member of the group.');
+        }
 
-      // Validate all split participants
-      for (const split of data.splits) {
-        if (!memberIds.has(split.userId)) {
-          throw new ValidationError(`User ${split.userId} is not an active member of this group.`);
+        // Validate all split participants
+        for (const split of data.splits) {
+          if (!memberIds.has(split.userId)) {
+            throw new ValidationError(`User ${split.userId} is not an active member of this group.`);
+          }
+        }
+      } else {
+        // Direct friend expense: validate all users exist
+        const userIds = [data.paidBy, ...data.splits.map((s) => s.userId)];
+        const existingUsers = await tx.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true }
+        });
+
+        if (existingUsers.length !== new Set(userIds).size) {
+          throw new ValidationError('One or more expense participants do not exist.');
         }
       }
 
@@ -129,7 +148,7 @@ export class ExpensesService {
 
       return tx.expense.create({
         data: {
-          groupId,
+          groupId: targetGroupId,
           description: data.description.trim(),
           totalAmount: data.totalAmount,
           splitType: data.splitType,
@@ -221,12 +240,13 @@ export class ExpensesService {
       throw new ForbiddenError('Only the payer or creator can edit this expense.');
     }
 
-    const memberIds = new Set(existing.group.members.map((m) => m.userId));
+    const isGroup = !!existing.group;
+    const memberIds = isGroup ? new Set(existing.group!.members.map((m) => m.userId)) : null;
     const totalAmount = data.totalAmount ?? existing.totalAmount;
     const splitType = (data.splitType ?? existing.splitType) as SplitType;
     const paidBy = data.paidBy ?? existing.paidBy;
 
-    if (!memberIds.has(paidBy)) {
+    if (memberIds && !memberIds.has(paidBy)) {
       throw new ValidationError('Payer must be an active member of the group.');
     }
 
@@ -234,9 +254,11 @@ export class ExpensesService {
       let splitUpdateData = undefined;
 
       if (data.splits) {
-        for (const s of data.splits) {
-          if (!memberIds.has(s.userId)) {
-            throw new ValidationError(`User ${s.userId} is not a group member.`);
+        if (memberIds) {
+          for (const s of data.splits) {
+            if (!memberIds.has(s.userId)) {
+              throw new ValidationError(`User ${s.userId} is not a group member.`);
+            }
           }
         }
         const finalized = this.calculateSplits(totalAmount, splitType, data.splits);
@@ -280,10 +302,12 @@ export class ExpensesService {
       throw new NotFoundError('Expense not found');
     }
 
+    const isGroupOwner = existing.group && existing.group.createdBy === currentUserId;
+
     if (
       existing.paidBy !== currentUserId &&
       existing.createdBy !== currentUserId &&
-      existing.group.createdBy !== currentUserId
+      !isGroupOwner
     ) {
       throw new ForbiddenError('Only the payer, creator, or group owner can delete this expense.');
     }

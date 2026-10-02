@@ -20,6 +20,20 @@ export class ExpensesController {
     }
   }
 
+  static async createDirectExpense(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const validated = createExpenseSchema.parse(req.body);
+      const expense = await ExpensesService.createExpense(validated.groupId || null, req.user!.id, validated);
+      return res.status(201).json({
+        success: true,
+        data: expense,
+        message: 'Expense created successfully'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async listGroupExpenses(req: GroupRequest, res: Response, next: NextFunction) {
     try {
       const page = parseInt((req.query.page as string) || '1', 10);

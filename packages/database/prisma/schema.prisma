@@ -19,15 +19,32 @@ model User {
   updatedAt          DateTime  @updatedAt
 
   // Relationships
-  groupMemberships   GroupMember[]
-  createdGroups      Group[]                 @relation("GroupCreator")
-  expensesPaid       Expense[]               @relation("ExpensePayer")
-  expensesCreated    Expense[]               @relation("ExpenseCreator")
-  expenseSplits      ExpenseSplit[]
-  passwordResets     PasswordReset[]
-  telegramTokens     TelegramConnectToken[]
+  groupMemberships     GroupMember[]
+  createdGroups        Group[]                 @relation("GroupCreator")
+  expensesPaid         Expense[]               @relation("ExpensePayer")
+  expensesCreated      Expense[]               @relation("ExpenseCreator")
+  expenseSplits        ExpenseSplit[]
+  passwordResets       PasswordReset[]
+  telegramTokens       TelegramConnectToken[]
+  friendshipsRequested Friendship[]            @relation("FriendshipRequester")
+  friendshipsReceived  Friendship[]            @relation("FriendshipReceiver")
 
   @@index([email])
+}
+
+model Friendship {
+  id          String   @id @default(cuid())
+  requesterId String
+  requester   User     @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiverId  String
+  receiver    User     @relation("FriendshipReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  status      String   @default("ACCEPTED") // PENDING | ACCEPTED | REJECTED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([requesterId, receiverId])
+  @@index([requesterId])
+  @@index([receiverId])
 }
 
 model PasswordReset {
@@ -85,8 +102,8 @@ model GroupMember {
 
 model Expense {
   id          String         @id @default(cuid())
-  groupId     String
-  group       Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId     String?        // Nullable: null indicates direct 1-to-1 friend expense
+  group       Group?         @relation(fields: [groupId], references: [id], onDelete: Cascade)
   description String
   totalAmount Int            // Integer minor units (e.g., paise/cents: 120000 = ₹1,200.00)
   splitType   String         @default("EQUAL") // EQUAL | EXACT | PERCENTAGE
@@ -103,6 +120,7 @@ model Expense {
   @@index([groupId, expenseDate(sort: Desc)])
   @@index([paidBy])
   @@index([groupId])
+  @@index([createdBy])
 }
 
 model ExpenseSplit {

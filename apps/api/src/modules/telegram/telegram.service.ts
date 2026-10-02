@@ -178,13 +178,15 @@ export class TelegramService {
         const payerShare = payerSplit ? payerSplit.amountOwed : 0;
         const owedToPayer = expense.totalAmount - payerShare;
 
+        const groupLabel = expense.group ? `Group: <i>${expense.group.name}</i>` : `<i>Direct Friend Expense</i>`;
+
         const payerMsg = [
           `💸 <b>Expense Added</b>\n`,
           `<b>${expense.description}</b>\n`,
           `You paid: ${formattedTotal}`,
           `Your share: ${formatCurrency(payerShare)}`,
           `You are owed: ${formatCurrency(owedToPayer)}\n`,
-          `Group: <i>${expense.group.name}</i>`
+          groupLabel
         ].join('\n');
 
         await this.sendMessage(expense.payer.telegramChatId, payerMsg);
@@ -196,13 +198,15 @@ export class TelegramService {
 
         const user = split.user;
         if (user.telegramConnected && user.telegramChatId) {
+          const groupLabel = expense.group ? `Group: <i>${expense.group.name}</i>` : `<i>Direct Friend Expense</i>`;
+
           const participantMsg = [
             `💸 <b>New Expense</b>\n`,
             `<b>${expense.description}</b>\n`,
             `Total: ${formattedTotal}`,
             `Paid by: ${expense.payer.name}`,
             `Your share: ${formatCurrency(split.amountOwed)}\n`,
-            `Group: <i>${expense.group.name}</i>`
+            groupLabel
           ].join('\n');
 
           await this.sendMessage(user.telegramChatId, participantMsg);

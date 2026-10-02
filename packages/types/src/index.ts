@@ -32,6 +32,16 @@ export interface GroupItem {
   };
 }
 
+export interface FriendItem {
+  id: string;
+  friendId: string;
+  friend: SafeUser;
+  netBalance: number; // In minor units: positive = they owe you, negative = you owe them
+  totalPaid: number;
+  totalShare: number;
+  status: string;
+}
+
 export interface ExpenseSplitItem {
   id: string;
   expenseId: string;
@@ -42,7 +52,7 @@ export interface ExpenseSplitItem {
 
 export interface ExpenseItem {
   id: string;
-  groupId: string;
+  groupId: string | null;
   description: string;
   totalAmount: number; // In minor units (paise/cents)
   splitType: SplitType;
@@ -63,6 +73,7 @@ export interface CreateExpenseSplitInput {
 }
 
 export interface CreateExpensePayload {
+  groupId?: string | null;
   description: string;
   totalAmount: number; // In minor units
   splitType: SplitType;
@@ -107,6 +118,7 @@ export interface DashboardSummary {
   netBalance: number;
   recentExpenses: ExpenseItem[];
   groups: GroupItem[];
+  friends: FriendItem[];
 }
 
 export interface TelegramStatusResponse {

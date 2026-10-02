@@ -15,6 +15,7 @@ groupExpensesRouter.post('/', ExpensesController.createExpense);
 export const directExpensesRouter = Router();
 directExpensesRouter.use(requireAuth);
 
+directExpensesRouter.post('/', ExpensesController.createDirectExpense);
 directExpensesRouter.get('/:expenseId', ExpensesController.getExpense);
 directExpensesRouter.patch('/:expenseId', ExpensesController.updateExpense);
 directExpensesRouter.delete('/:expenseId', ExpensesController.deleteExpense);

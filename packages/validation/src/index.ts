@@ -52,6 +52,12 @@ export const addMemberSchema = z.object({
 
 export type AddMemberInput = z.infer<typeof addMemberSchema>;
 
+export const addFriendSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Invalid email address')
+});
+
+export type AddFriendInput = z.infer<typeof addFriendSchema>;
+
 export const splitItemSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),
   amountOwed: z.number().int().nonnegative('Amount must be non-negative').optional(),
@@ -60,6 +66,7 @@ export const splitItemSchema = z.object({
 
 export const createExpenseSchema = z
   .object({
+    groupId: z.string().nullable().optional(),
     description: z.string().trim().min(1, 'Description is required').max(255, 'Description too long'),
     totalAmount: z.number().int().positive('Total amount must be greater than zero'), // Minor units (e.g., paise)
     splitType: z.enum(['EQUAL', 'EXACT', 'PERCENTAGE']),
