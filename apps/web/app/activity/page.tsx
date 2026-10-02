@@ -33,16 +33,16 @@ export default function ActivityPage() {
           </div>
         ) : error ? (
           <div className="p-8 text-center text-sm text-red-500">Failed to load activity</div>
-        ) : summary?.recentExpenses.length === 0 ? (
+        ) : (summary?.recentExpenses || []).length === 0 ? (
           <div className="py-16 text-center text-slate-400 text-xs">
             <Receipt className="w-10 h-10 mx-auto mb-2 opacity-40" />
             <p>No expense activity yet.</p>
           </div>
         ) : (
           <div className="space-y-2.5">
-            {summary?.recentExpenses.map((expense) => {
+            {(summary?.recentExpenses || []).map((expense) => {
               const isPayer = expense.paidBy === user?.id;
-              const userSplit = expense.splits.find((s) => s.userId === user?.id);
+              const userSplit = expense.splits?.find((s) => s.userId === user?.id);
               const userShare = userSplit ? userSplit.amountOwed : 0;
 
               return (

@@ -95,6 +95,71 @@ export class ExpensesService {
       return result;
     }
 
+    if (splitType === 'FULL_AMOUNT') {
+      // If explicit custom amounts are specified for participants
+      const hasCustomAmounts = splits.some((s) => s.amountOwed !== undefined && s.amountOwed > 0);
+      if (hasCustomAmounts) {
+        const result = splits.map((s) => ({
+          userId: s.userId,
+          amountOwed: s.amountOwed ?? 0
+        }));
+        const sum = result.reduce((acc, curr) => acc + curr.amountOwed, 0);
+        if (sum !== totalAmount) {
+          throw new ValidationError(`Full amount split sum (${sum}) does not match expense total (${totalAmount}).`);
+        }
+        return result;
+      }
+
+      // If percentages are specified
+      const hasPercentages = splits.some((s) => s.percentage !== undefined && s.percentage > 0);
+      if (hasPercentages) {
+        let allocatedSum = 0;
+        let maxPercentIndex = 0;
+        let maxPercentValue = -1;
+
+        const result = splits.map((s, idx) => {
+          const pct = s.percentage ?? 0;
+          if (pct > maxPercentValue) {
+            maxPercentValue = pct;
+            maxPercentIndex = idx;
+          }
+          const amount = Math.round((pct / 100) * totalAmount);
+          allocatedSum += amount;
+          return {
+            userId: s.userId,
+            amountOwed: amount
+          };
+        });
+
+        const discrepancy = totalAmount - allocatedSum;
+        if (discrepancy !== 0 && result.length > 0) {
+          result[maxPercentIndex].amountOwed += discrepancy;
+        }
+        return result;
+      }
+
+      // Identify active owed participants (exclude explicit 0 amountOwed)
+      const nonZeroParticipants = splits.filter((s) => s.amountOwed === undefined || s.amountOwed > 0);
+      const activeDebtors = nonZeroParticipants.length > 0 ? nonZeroParticipants : splits;
+
+      // Single debtor owes 100% of the total amount
+      if (activeDebtors.length === 1) {
+        return [{
+          userId: activeDebtors[0].userId,
+          amountOwed: totalAmount
+        }];
+      }
+
+      // Multiple debtors: divide equally among them
+      const debtorCount = activeDebtors.length;
+      const baseShare = Math.floor(totalAmount / debtorCount);
+      const remainder = totalAmount % debtorCount;
+      return activeDebtors.map((s, index) => ({
+        userId: s.userId,
+        amountOwed: index < remainder ? baseShare + 1 : baseShare
+      }));
+    }
+
     throw new ValidationError(`Unsupported split type: ${splitType}`);
   }
 

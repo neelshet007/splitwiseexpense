@@ -98,4 +98,43 @@ describe('ExpensesService (Split Calculation Logic)', () => {
     const result = ExpensesService.calculateSplits(5000, 'EQUAL', splits);
     expect(result).toEqual([{ userId: 'u1', amountOwed: 5000 }]);
   });
+
+  describe('Full Amount split mode (payer paid 100% for someone else)', () => {
+    it('automatically allocates 100% of expense to a single debtor without manual entry', () => {
+      // ₹1,000 paid by Ali for Neel
+      const splits = [{ userId: 'neel' }];
+      const result = ExpensesService.calculateSplits(100000, 'FULL_AMOUNT', splits);
+
+      expect(result).toEqual([
+        { userId: 'neel', amountOwed: 100000 }
+      ]);
+    });
+
+    it('divides equally among multiple debtors when no explicit custom amounts provided', () => {
+      // ₹1,000 paid by Ali for Neel & Rahul (₹500 each)
+      const splits = [{ userId: 'neel' }, { userId: 'rahul' }];
+      const result = ExpensesService.calculateSplits(100000, 'FULL_AMOUNT', splits);
+
+      expect(result).toEqual([
+        { userId: 'neel', amountOwed: 50000 },
+        { userId: 'rahul', amountOwed: 50000 }
+      ]);
+      const sum = result.reduce((acc, curr) => acc + curr.amountOwed, 0);
+      expect(sum).toBe(100000);
+    });
+
+    it('allocates custom amounts among multiple debtors when specified', () => {
+      // ₹1,000 paid by Ali for Neel (₹300) & Rahul (₹700)
+      const splits = [
+        { userId: 'neel', amountOwed: 30000 },
+        { userId: 'rahul', amountOwed: 70000 }
+      ];
+      const result = ExpensesService.calculateSplits(100000, 'FULL_AMOUNT', splits);
+
+      expect(result).toEqual([
+        { userId: 'neel', amountOwed: 30000 },
+        { userId: 'rahul', amountOwed: 70000 }
+      ]);
+    });
+  });
 });

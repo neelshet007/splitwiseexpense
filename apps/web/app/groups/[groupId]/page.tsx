@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -51,9 +51,13 @@ export default function GroupDetailPage() {
   });
 
   // Safely extract expenses array whether returned as array or { expenses: [] }
-  const expensesList: ExpenseItem[] = Array.isArray(expensesData)
-    ? expensesData
-    : expensesData?.expenses || [];
+  const expensesList: ExpenseItem[] = useMemo(() => {
+    if (Array.isArray(expensesData)) return expensesData;
+    if (expensesData && Array.isArray(expensesData.expenses)) {
+      return expensesData.expenses;
+    }
+    return [];
+  }, [expensesData]);
 
   // 3. Group balances
   const { data: balancesData } = useQuery<GroupBalancesResponse>({
@@ -152,7 +156,7 @@ export default function GroupDetailPage() {
   }
 
   // Calculate current user's balance in this group
-  const currentUserBalance = balancesData?.balances.find((b) => b.userId === user?.id);
+  const currentUserBalance = balancesData?.balances?.find((b) => b.userId === user?.id);
   const netBalance = currentUserBalance?.netBalance ?? 0;
 
   return (
@@ -184,7 +188,7 @@ export default function GroupDetailPage() {
             <div>
               <h1 className="text-xl font-bold tracking-tight">{group.name}</h1>
               <p className="text-xs text-slate-400 mt-0.5">
-                {group.members.length} members • {formatMinorCurrency(balancesData?.totalExpenses ?? 0)} total spent
+                {(group.members || []).length} members • {formatMinorCurrency(balancesData?.totalExpenses ?? 0)} total spent
               </p>
             </div>
           </div>
@@ -272,7 +276,7 @@ export default function GroupDetailPage() {
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Members ({group.members.length})</span>
+            <span>Members ({(group.members || []).length})</span>
           </button>
         </div>
 
@@ -356,7 +360,7 @@ export default function GroupDetailPage() {
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
                 Suggested Settlements
               </h3>
-              {settlementsData?.settlements.length === 0 ? (
+              {(!settlementsData?.settlements || settlementsData.settlements.length === 0) ? (
                 <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center">
                   <CheckCircle className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
                   <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
@@ -368,7 +372,7 @@ export default function GroupDetailPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {settlementsData?.settlements.map((s, idx) => {
+                  {(settlementsData?.settlements || []).map((s, idx) => {
                     const youAreDebtor = s.fromUserId === user?.id;
                     const youAreCreditor = s.toUserId === user?.id;
 
@@ -409,7 +413,7 @@ export default function GroupDetailPage() {
                 Member Balances
               </h3>
               <div className="space-y-2">
-                {balancesData?.balances.map((b) => (
+                {(balancesData?.balances || []).map((b) => (
                   <div
                     key={b.userId}
                     className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800"
@@ -478,7 +482,7 @@ export default function GroupDetailPage() {
                   type="email"
                   value={memberEmail}
                   onChange={(e) => setMemberEmail(e.target.value)}
-                  placeholder="friend@example.com"
+                  placeholder="lucas@example.com"
                   required
                   className="flex-1 px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
@@ -494,7 +498,7 @@ export default function GroupDetailPage() {
 
             {/* Members List */}
             <div className="space-y-2">
-              {group.members.map((m) => (
+              {(group.members || []).map((m) => (
                 <div
                   key={m.id}
                   className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800"

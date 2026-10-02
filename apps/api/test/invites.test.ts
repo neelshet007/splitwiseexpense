@@ -13,11 +13,11 @@ describe('Group Invitations & Idempotent Joining', () => {
   });
 
   it('allows looking up seeded group preview by invite code', async () => {
-    const preview = await GroupsService.getGroupPreview('MUM-7K4P2X');
-    expect(preview.name).toBe('Mumbai Friends');
-    expect(preview.inviteCode).toBe('MUM-7K4P2X');
+    const preview = await GroupsService.getGroupPreview('GOA-7K4P2X');
+    expect(preview.name).toBe('Goa Trip');
+    expect(preview.inviteCode).toBe('GOA-7K4P2X');
     expect(preview.memberCount).toBe(3);
-    expect(preview.creatorName).toBe('Neel Sharma');
+    expect(preview.creatorName).toBe('Liam Vance');
   });
 
   it('rejects nonexistent invite codes with NotFoundError', async () => {
@@ -27,15 +27,15 @@ describe('Group Invitations & Idempotent Joining', () => {
   });
 
   it('idempotently handles join requests when user is already a member', async () => {
-    const neel = await prisma.user.findUnique({ where: { email: 'neel@example.com' } });
-    expect(neel).not.toBeNull();
+    const liam = await prisma.user.findUnique({ where: { email: 'liam@example.com' } });
+    expect(liam).not.toBeNull();
 
-    const joinResult = await GroupsService.joinGroupByInviteCode(neel!.id, {
-      inviteCode: 'MUM-7K4P2X'
+    const joinResult = await GroupsService.joinGroupByInviteCode(liam!.id, {
+      inviteCode: 'GOA-7K4P2X'
     });
 
     expect(joinResult.alreadyMember).toBe(true);
     expect(joinResult.message).toContain('already a member');
-    expect(joinResult.group.name).toBe('Mumbai Friends');
+    expect(joinResult.group.name).toBe('Goa Trip');
   });
 });

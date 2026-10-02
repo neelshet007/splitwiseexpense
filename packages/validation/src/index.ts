@@ -75,7 +75,7 @@ export const createExpenseSchema = z
     groupId: z.string().nullable().optional(),
     description: z.string().trim().min(1, 'Description is required').max(255, 'Description too long'),
     totalAmount: z.number().int().positive('Total amount must be greater than zero'), // Minor units (e.g., paise)
-    splitType: z.enum(['EQUAL', 'EXACT', 'PERCENTAGE']),
+    splitType: z.enum(['EQUAL', 'EXACT', 'PERCENTAGE', 'FULL_AMOUNT']),
     paidBy: z.string().min(1, 'Payer is required'),
     expenseDate: z.string().datetime().optional(),
     splits: z.array(splitItemSchema).min(1, 'At least one participant is required')
@@ -92,14 +92,17 @@ export const createExpenseSchema = z
       });
     }
 
-    if (data.splitType === 'EXACT') {
-      const sum = data.splits.reduce((acc, curr) => acc + (curr.amountOwed ?? 0), 0);
-      if (sum !== data.totalAmount) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Exact split sum (${sum}) must match total amount (${data.totalAmount})`,
-          path: ['splits']
-        });
+    if (data.splitType === 'EXACT' || data.splitType === 'FULL_AMOUNT') {
+      const hasAmounts = data.splits.some((s) => s.amountOwed !== undefined);
+      if (hasAmounts) {
+        const sum = data.splits.reduce((acc, curr) => acc + (curr.amountOwed ?? 0), 0);
+        if (sum !== data.totalAmount) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Split sum (${sum}) must match total amount (${data.totalAmount})`,
+            path: ['splits']
+          });
+        }
       }
     }
 
@@ -122,7 +125,7 @@ export const updateExpenseSchema = z
   .object({
     description: z.string().trim().min(1).max(255).optional(),
     totalAmount: z.number().int().positive().optional(),
-    splitType: z.enum(['EQUAL', 'EXACT', 'PERCENTAGE']).optional(),
+    splitType: z.enum(['EQUAL', 'EXACT', 'PERCENTAGE', 'FULL_AMOUNT']).optional(),
     paidBy: z.string().min(1).optional(),
     expenseDate: z.string().datetime().optional(),
     splits: z.array(splitItemSchema).min(1).optional()
@@ -138,14 +141,17 @@ export const updateExpenseSchema = z
           path: ['splits']
         });
       }
-      if (data.splitType === 'EXACT') {
-        const sum = data.splits.reduce((acc, curr) => acc + (curr.amountOwed ?? 0), 0);
-        if (sum !== data.totalAmount) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: `Exact split sum (${sum}) must match total amount (${data.totalAmount})`,
-            path: ['splits']
-          });
+      if (data.splitType === 'EXACT' || data.splitType === 'FULL_AMOUNT') {
+        const hasAmounts = data.splits.some((s) => s.amountOwed !== undefined);
+        if (hasAmounts) {
+          const sum = data.splits.reduce((acc, curr) => acc + (curr.amountOwed ?? 0), 0);
+          if (sum !== data.totalAmount) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `Split sum (${sum}) must match total amount (${data.totalAmount})`,
+              path: ['splits']
+            });
+          }
         }
       }
     }

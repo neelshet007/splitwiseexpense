@@ -32,12 +32,15 @@ export class FriendsService {
       const directExpenses = await prisma.expense.findMany({
         where: {
           groupId: null,
-          splits: {
-            some: { userId }
-          },
           OR: [
-            { paidBy: userId },
-            { paidBy: friendId }
+            { paidBy: userId, splits: { some: { userId: friendId } } },
+            { paidBy: friendId, splits: { some: { userId } } },
+            {
+              AND: [
+                { splits: { some: { userId } } },
+                { splits: { some: { userId: friendId } } }
+              ]
+            }
           ]
         },
         include: {

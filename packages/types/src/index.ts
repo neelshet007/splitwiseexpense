@@ -1,4 +1,4 @@
-export type SplitType = 'EQUAL' | 'EXACT' | 'PERCENTAGE';
+export type SplitType = 'EQUAL' | 'EXACT' | 'PERCENTAGE' | 'FULL_AMOUNT';
 
 export interface SafeUser {
   id: string;

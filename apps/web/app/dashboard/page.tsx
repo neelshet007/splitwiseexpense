@@ -175,7 +175,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {summary.friends.slice(0, 4).map((f) => (
+              {(summary.friends || []).slice(0, 4).map((f) => (
                 <div
                   key={f.id}
                   className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800"
@@ -227,12 +227,12 @@ export default function DashboardPage() {
               href="/groups"
               className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center"
             >
-              <span>See all ({summary.groups.length})</span>
+              <span>See all ({(summary.groups || []).length})</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </Link>
           </div>
 
-          {summary.groups.length === 0 ? (
+          {(summary.groups || []).length === 0 ? (
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-center">
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-2.5">
                 No active groups yet. Create a group for a trip, flatmates, or hostel.
@@ -247,7 +247,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
-              {summary.groups.map((group) => (
+              {(summary.groups || []).map((group) => (
                 <Link
                   key={group.id}
                   href={`/groups/${group.id}`}
@@ -260,7 +260,7 @@ export default function DashboardPage() {
                     {group.name}
                   </h3>
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    {group.members.length} members
+                    {group.members?.length ?? 0} members
                   </p>
                 </Link>
               ))}
@@ -284,7 +284,7 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          {summary.recentExpenses.length === 0 ? (
+          {(summary.recentExpenses || []).length === 0 ? (
             <div className="py-10 text-center text-slate-400 text-xs">
               <Receipt className="w-8 h-8 mx-auto mb-2 opacity-40" />
               <p>No recent expenses recorded.</p>
@@ -292,9 +292,9 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-2.5">
-              {summary.recentExpenses.map((expense) => {
+              {(summary.recentExpenses || []).map((expense) => {
                 const isPayer = expense.paidBy === summary.user.id;
-                const userSplit = expense.splits.find((s) => s.userId === summary.user.id);
+                const userSplit = expense.splits?.find((s) => s.userId === summary.user.id);
                 const userShare = userSplit ? userSplit.amountOwed : 0;
 
                 return (

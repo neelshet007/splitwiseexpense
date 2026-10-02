@@ -180,7 +180,8 @@ export class BalanceService {
       where: {
         OR: [
           { groupId: { in: groupIds } },
-          { groupId: null, splits: { some: { userId } } }
+          { groupId: null, splits: { some: { userId } } },
+          { groupId: null, paidBy: userId }
         ]
       },
       include: {

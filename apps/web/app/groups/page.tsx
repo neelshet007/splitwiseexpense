@@ -140,7 +140,7 @@ export default function GroupsListPage() {
                   <div>
                     <h3 className="text-sm font-bold text-slate-900 dark:text-white">{group.name}</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      {group.members.length} {group.members.length === 1 ? 'member' : 'members'} •{' '}
+                      {(group.members || []).length} {(group.members || []).length === 1 ? 'member' : 'members'} •{' '}
                       {group._count?.expenses ?? 0} expenses
                     </p>
                   </div>

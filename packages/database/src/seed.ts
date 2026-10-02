@@ -24,61 +24,61 @@ async function main() {
     parallelism: 4
   });
 
-  // 1. Create Users
-  const neel = await prisma.user.create({
+  // 1. Create Users (Using foreign names per UX requirement)
+  const liam = await prisma.user.create({
     data: {
-      name: 'Neel Sharma',
-      email: 'neel@example.com',
+      name: 'Liam Vance',
+      email: 'liam@example.com',
       passwordHash,
       telegramChatId: '12345678',
-      telegramUsername: 'neel_sharma',
+      telegramUsername: 'liam_vance',
       telegramConnected: true
     }
   });
 
-  const rahul = await prisma.user.create({
+  const lucas = await prisma.user.create({
     data: {
-      name: 'Rahul Verma',
-      email: 'rahul@example.com',
+      name: 'Lucas Bennett',
+      email: 'lucas@example.com',
       passwordHash,
       telegramChatId: '87654321',
-      telegramUsername: 'rahul_v',
+      telegramUsername: 'lucas_b',
       telegramConnected: true
     }
   });
 
-  const aman = await prisma.user.create({
+  const noah = await prisma.user.create({
     data: {
-      name: 'Aman Gupta',
-      email: 'aman@example.com',
+      name: 'Noah Miller',
+      email: 'noah@example.com',
       passwordHash,
       telegramConnected: false
     }
   });
 
-  console.log(`✓ Created 3 users: ${neel.name}, ${rahul.name}, ${aman.name}`);
+  console.log(`✓ Created 3 users: ${liam.name}, ${lucas.name}, ${noah.name}`);
 
   // Create Friendships
   await prisma.friendship.createMany({
     data: [
-      { requesterId: neel.id, receiverId: rahul.id, status: 'ACCEPTED' },
-      { requesterId: neel.id, receiverId: aman.id, status: 'ACCEPTED' },
-      { requesterId: rahul.id, receiverId: aman.id, status: 'ACCEPTED' }
+      { requesterId: liam.id, receiverId: lucas.id, status: 'ACCEPTED' },
+      { requesterId: liam.id, receiverId: noah.id, status: 'ACCEPTED' },
+      { requesterId: lucas.id, receiverId: noah.id, status: 'ACCEPTED' }
     ]
   });
-  console.log('✓ Created friendships between Neel, Rahul, and Aman');
+  console.log('✓ Created friendships between Liam, Lucas, and Noah');
 
-  // 2. Create Group
+  // 2. Create Group with human-friendly invite code GOA-7K4P2X
   const group = await prisma.group.create({
     data: {
-      name: 'Mumbai Friends',
-      inviteCode: 'MUM-7K4P2X',
-      createdBy: neel.id,
+      name: 'Goa Trip',
+      inviteCode: 'GOA-7K4P2X',
+      createdBy: liam.id,
       members: {
         create: [
-          { userId: neel.id },
-          { userId: rahul.id },
-          { userId: aman.id }
+          { userId: liam.id },
+          { userId: lucas.id },
+          { userId: noah.id }
         ]
       }
     }
@@ -87,49 +87,49 @@ async function main() {
   console.log(`✓ Created group: ${group.name} with 3 members`);
 
   // 3. Create Expenses matching prompt example:
-  // Neel pays ₹2,400 for Dinner (split equally ₹800 each)
-  //   Neel paid: 2400, share: 800 -> Net +1600
-  //   Rahul paid: 0, share: 800 -> Net -800
-  //   Aman paid: 0, share: 800 -> Net -800
+  // Liam pays ₹2,400 for Dinner (split equally ₹800 each)
+  //   Liam paid: 2400, share: 800 -> Net +1600
+  //   Lucas paid: 0, share: 800 -> Net -800
+  //   Noah paid: 0, share: 800 -> Net -800
   //
-  // Rahul pays ₹600 for Cab (split equally ₹200 each)
-  //   Rahul paid: 600, share: 200 -> Net +400 (Combined: -800 + 400 = -400)
-  //   Neel paid: 0, share: 200 -> Net -200 (Combined: +1600 - 200 = +1400)
-  //   Aman paid: 0, share: 200 -> Net -200 (Combined: -800 - 200 = -1000)
+  // Lucas pays ₹600 for Cab (split equally ₹200 each)
+  //   Lucas paid: 600, share: 200 -> Net +400 (Combined: -800 + 400 = -400)
+  //   Liam paid: 0, share: 200 -> Net -200 (Combined: +1600 - 200 = +1400)
+  //   Noah paid: 0, share: 200 -> Net -200 (Combined: -800 - 200 = -1000)
   //
-  // Neel pays ₹600 for Groceries (Exact split: Rahul owes 500, Aman owes 100, Neel owes 0)
-  //   Neel paid: 600, share: 0 -> Net +600 (Combined: +1400 + 600 = +2000)
-  //   Rahul paid: 0, share: 500 -> Net -500 (Combined: -400 - 500 = -900)
-  //   Aman paid: 0, share: 100 -> Net -100 (Combined: -1000 - 100 = -1100)
+  // Liam pays ₹600 for Groceries (Exact split: Lucas owes 500, Noah owes 100, Liam owes 0)
+  //   Liam paid: 600, share: 0 -> Net +600 (Combined: +1400 + 600 = +2000)
+  //   Lucas paid: 0, share: 500 -> Net -500 (Combined: -400 - 500 = -900)
+  //   Noah paid: 0, share: 100 -> Net -100 (Combined: -1000 - 100 = -1100)
   //
-  // Aman pays ₹1,000 for Snacks (Percentage split: Rahul 30% [300], Neel 50% [500], Aman 20% [200])
-  //   Aman paid: 1000, share: 200 -> Net +800 (Combined: -1100 + 800 = -300)
-  //   Rahul paid: 0, share: 300 -> Net -300 (Combined: -900 - 300 = -1200)
-  //   Neel paid: 0, share: 500 -> Net -500 (Combined: +2000 - 500 = +1500)
+  // Noah pays ₹1,000 for Snacks (Percentage split: Lucas 30% [300], Liam 50% [500], Noah 20% [200])
+  //   Noah paid: 1000, share: 200 -> Net +800 (Combined: -1100 + 800 = -300)
+  //   Lucas paid: 0, share: 300 -> Net -300 (Combined: -900 - 300 = -1200)
+  //   Liam paid: 0, share: 500 -> Net -500 (Combined: +2000 - 500 = +1500)
   //
   // RESULTING NET BALANCES:
-  // Neel:  +1500 (₹1,500.00 in minor units = 150000)
-  // Rahul: -1200 (₹1,200.00 in minor units = -120000)
-  // Aman:  -300  (₹300.00 in minor units   = -30000)
+  // Liam:  +1500 (₹1,500.00 in minor units = 150000)
+  // Lucas: -1200 (₹1,200.00 in minor units = -120000)
+  // Noah:  -300  (₹300.00 in minor units   = -30000)
   // SETTLEMENTS:
-  // Rahul -> Neel ₹1,200
-  // Aman  -> Neel ₹300
+  // Lucas -> Liam ₹1,200
+  // Noah  -> Liam ₹300
 
   // Expense 1: Dinner (Equal split: ₹2,400 = 240000 minor units)
   await prisma.expense.create({
     data: {
       groupId: group.id,
-      description: 'Dinner at Bastian',
+      description: 'Dinner at Beachside Bistro',
       totalAmount: 240000,
       splitType: 'EQUAL',
-      paidBy: neel.id,
-      createdBy: neel.id,
+      paidBy: liam.id,
+      createdBy: liam.id,
       expenseDate: new Date('2026-10-01T20:30:00Z'),
       splits: {
         create: [
-          { userId: neel.id, amountOwed: 80000 },
-          { userId: rahul.id, amountOwed: 80000 },
-          { userId: aman.id, amountOwed: 80000 }
+          { userId: liam.id, amountOwed: 80000 },
+          { userId: lucas.id, amountOwed: 80000 },
+          { userId: noah.id, amountOwed: 80000 }
         ]
       }
     }
@@ -142,14 +142,14 @@ async function main() {
       description: 'Airport Cab',
       totalAmount: 60000,
       splitType: 'EQUAL',
-      paidBy: rahul.id,
-      createdBy: rahul.id,
+      paidBy: lucas.id,
+      createdBy: lucas.id,
       expenseDate: new Date('2026-10-02T10:15:00Z'),
       splits: {
         create: [
-          { userId: neel.id, amountOwed: 20000 },
-          { userId: rahul.id, amountOwed: 20000 },
-          { userId: aman.id, amountOwed: 20000 }
+          { userId: liam.id, amountOwed: 20000 },
+          { userId: lucas.id, amountOwed: 20000 },
+          { userId: noah.id, amountOwed: 20000 }
         ]
       }
     }
@@ -162,13 +162,13 @@ async function main() {
       description: 'Supermarket Supplies',
       totalAmount: 60000,
       splitType: 'EXACT',
-      paidBy: neel.id,
-      createdBy: neel.id,
+      paidBy: liam.id,
+      createdBy: liam.id,
       expenseDate: new Date('2026-10-02T14:00:00Z'),
       splits: {
         create: [
-          { userId: rahul.id, amountOwed: 50000 },
-          { userId: aman.id, amountOwed: 10000 }
+          { userId: lucas.id, amountOwed: 50000 },
+          { userId: noah.id, amountOwed: 10000 }
         ]
       }
     }
@@ -181,33 +181,33 @@ async function main() {
       description: 'Evening Snacks & Coffee',
       totalAmount: 100000,
       splitType: 'PERCENTAGE',
-      paidBy: aman.id,
-      createdBy: aman.id,
+      paidBy: noah.id,
+      createdBy: noah.id,
       expenseDate: new Date('2026-10-02T17:45:00Z'),
       splits: {
         create: [
-          { userId: neel.id, amountOwed: 50000 },  // 50%
-          { userId: rahul.id, amountOwed: 30000 }, // 30%
-          { userId: aman.id, amountOwed: 20000 }   // 20%
+          { userId: liam.id, amountOwed: 50000 },  // 50%
+          { userId: lucas.id, amountOwed: 30000 }, // 30%
+          { userId: noah.id, amountOwed: 20000 }   // 20%
         ]
       }
     }
   });
 
-  // Expense 5: Direct 1-to-1 Expense (No group: Coffee with Rahul, ₹240 = 24000 minor units)
+  // Expense 5: Direct 1-to-1 Expense (No group: Coffee with Lucas, ₹240 = 24000 minor units)
   await prisma.expense.create({
     data: {
       groupId: null,
-      description: 'Third Wave Coffee',
+      description: 'Artisan Coffee',
       totalAmount: 24000,
       splitType: 'EQUAL',
-      paidBy: neel.id,
-      createdBy: neel.id,
+      paidBy: liam.id,
+      createdBy: liam.id,
       expenseDate: new Date('2026-10-02T19:00:00Z'),
       splits: {
         create: [
-          { userId: neel.id, amountOwed: 12000 },
-          { userId: rahul.id, amountOwed: 12000 }
+          { userId: liam.id, amountOwed: 12000 },
+          { userId: lucas.id, amountOwed: 12000 }
         ]
       }
     }
