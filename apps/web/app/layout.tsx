@@ -5,7 +5,9 @@ import { Providers } from './providers';
 export const metadata: Metadata = {
   title: 'Splitwise Private - Effortless Friend Expense Sharing',
   description: 'Clean, private, mobile-first expense splitting app for friends with real-time Telegram notifications and monthly summaries.',
-  manifest: '/manifest.json'
+  icons: {
+    icon: '/icon.svg'
+  }
 };
 
 export const viewport: Viewport = {
