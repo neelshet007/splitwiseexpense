@@ -84,18 +84,57 @@ function AddExpenseForm() {
     }
   }, [activeGroup, paidBy, user, selectedGroupId]);
 
-  // Selected friend object
+  // Selected friend object & amount in minor units
   const activeFriend = friends?.find((f) => f.friendId === selectedFriendId);
-
   const totalAmountMinor = Math.round((parseFloat(amountStr) || 0) * 100);
 
+  // Helper to initialize or sync custom amounts & percentages
+  useEffect(() => {
+    if (totalAmountMinor > 0) {
+      if (splitMode === 'FRIEND' && activeFriend && user) {
+        if (!exactAmounts[user.id] && !exactAmounts[activeFriend.friendId]) {
+          const half = (totalAmountMinor / 200).toFixed(2);
+          setExactAmounts({
+            [user.id]: half,
+            [activeFriend.friendId]: half
+          });
+        }
+        if (!percentages[user.id] && !percentages[activeFriend.friendId]) {
+          setPercentages({
+            [user.id]: '50',
+            [activeFriend.friendId]: '50'
+          });
+        }
+      } else if (splitMode === 'GROUP' && activeGroup) {
+        const activeIds = Object.keys(selectedMembers).filter((id) => selectedMembers[id]);
+        if (activeIds.length > 0) {
+          const perPerson = (totalAmountMinor / (activeIds.length * 100)).toFixed(2);
+          const perPct = (100 / activeIds.length).toFixed(1);
+          setExactAmounts((prev) => {
+            const next = { ...prev };
+            activeIds.forEach((id) => {
+              if (!next[id]) next[id] = perPerson;
+            });
+            return next;
+          });
+          setPercentages((prev) => {
+            const next = { ...prev };
+            activeIds.forEach((id) => {
+              if (!next[id]) next[id] = perPct;
+            });
+            return next;
+          });
+        }
+      }
+    }
+  }, [totalAmountMinor, splitMode, activeFriend, user, activeGroup, selectedMembers]);
+
   // Calculate Splits
-  let calculatedSplits: { userId: string; name: string; amountOwed: number }[] = [];
+  let calculatedSplits: { userId: string; name: string; amountOwed: number; pct?: number }[] = [];
   let validationError: string | null = null;
 
   if (splitMode === 'FRIEND' && activeFriend && user && totalAmountMinor > 0) {
     if (splitType === 'EQUAL') {
-      // 50 / 50 split between you and your friend
       const base = Math.floor(totalAmountMinor / 2);
       const remainder = totalAmountMinor % 2;
 
@@ -103,12 +142,14 @@ function AddExpenseForm() {
         {
           userId: user.id,
           name: 'You',
-          amountOwed: base + remainder
+          amountOwed: base + remainder,
+          pct: 50
         },
         {
           userId: activeFriend.friendId,
           name: activeFriend.friend.name,
-          amountOwed: base
+          amountOwed: base,
+          pct: 50
         }
       ];
     } else if (splitType === 'EXACT') {
@@ -120,24 +161,29 @@ function AddExpenseForm() {
         { userId: activeFriend.friendId, name: activeFriend.friend.name, amountOwed: friendAmount }
       ];
 
-      if (myAmount + friendAmount !== totalAmountMinor) {
-        const diff = (totalAmountMinor - (myAmount + friendAmount)) / 100;
-        validationError = diff > 0 ? `₹${diff.toFixed(2)} left to allocate` : `₹${Math.abs(diff).toFixed(2)} over allocated`;
+      const sum = myAmount + friendAmount;
+      if (sum !== totalAmountMinor) {
+        const diff = (totalAmountMinor - sum) / 100;
+        validationError =
+          diff > 0
+            ? `₹${diff.toFixed(2)} left to allocate (Sum: ₹${(sum / 100).toFixed(2)} / ₹${(totalAmountMinor / 100).toFixed(2)})`
+            : `₹${Math.abs(diff).toFixed(2)} over allocated (Sum: ₹${(sum / 100).toFixed(2)} / ₹${(totalAmountMinor / 100).toFixed(2)})`;
       }
     } else if (splitType === 'PERCENTAGE') {
-      const myPct = parseFloat(percentages[user.id] || '50') || 0;
-      const friendPct = parseFloat(percentages[activeFriend.friendId] || '50') || 0;
+      const myPct = parseFloat(percentages[user.id] || '0') || 0;
+      const friendPct = parseFloat(percentages[activeFriend.friendId] || '0') || 0;
 
       const myVal = Math.round((myPct / 100) * totalAmountMinor);
       const friendVal = totalAmountMinor - myVal;
 
       calculatedSplits = [
-        { userId: user.id, name: 'You', amountOwed: myVal },
-        { userId: activeFriend.friendId, name: activeFriend.friend.name, amountOwed: friendVal }
+        { userId: user.id, name: 'You', amountOwed: myVal, pct: myPct },
+        { userId: activeFriend.friendId, name: activeFriend.friend.name, amountOwed: friendVal, pct: friendPct }
       ];
 
-      if (Math.abs(myPct + friendPct - 100) > 0.01) {
-        validationError = `Percentages sum to ${(myPct + friendPct).toFixed(1)}% (must be 100%)`;
+      const totalPct = myPct + friendPct;
+      if (Math.abs(totalPct - 100) > 0.01) {
+        validationError = `Percentages sum to ${totalPct.toFixed(1)}% (must equal 100%)`;
       }
     }
   } else if (splitMode === 'GROUP' && activeGroup && totalAmountMinor > 0) {
@@ -155,7 +201,8 @@ function AddExpenseForm() {
         return {
           userId: id,
           name: member?.user.name || 'Member',
-          amountOwed: index < remainder ? base + 1 : base
+          amountOwed: index < remainder ? base + 1 : base,
+          pct: parseFloat((100 / count).toFixed(1))
         };
       });
     } else if (splitType === 'EXACT') {
@@ -173,7 +220,10 @@ function AddExpenseForm() {
 
       if (sumMinor !== totalAmountMinor) {
         const diff = (totalAmountMinor - sumMinor) / 100;
-        validationError = diff > 0 ? `₹${diff.toFixed(2)} left to allocate` : `₹${Math.abs(diff).toFixed(2)} over allocated`;
+        validationError =
+          diff > 0
+            ? `₹${diff.toFixed(2)} left to allocate (Sum: ₹${(sumMinor / 100).toFixed(2)} / ₹${(totalAmountMinor / 100).toFixed(2)})`
+            : `₹${Math.abs(diff).toFixed(2)} over allocated (Sum: ₹${(sumMinor / 100).toFixed(2)} / ₹${(totalAmountMinor / 100).toFixed(2)})`;
       }
     } else if (splitType === 'PERCENTAGE') {
       let sumPct = 0;
@@ -194,7 +244,8 @@ function AddExpenseForm() {
         return {
           userId: id,
           name: member?.user.name || 'Member',
-          amountOwed: val
+          amountOwed: val,
+          pct
         };
       });
 
@@ -208,6 +259,21 @@ function AddExpenseForm() {
       }
     }
   }
+
+  // Perspective calculation for logged-in user
+  const effectivePayerId = paidBy || user?.id;
+  const isPayer = effectivePayerId === user?.id;
+  const payerName =
+    effectivePayerId === user?.id
+      ? 'You'
+      : splitMode === 'FRIEND'
+      ? activeFriend?.friend.name || 'Friend'
+      : activeGroup?.members.find((m) => m.userId === effectivePayerId)?.user.name || 'Member';
+
+  const mySplit = calculatedSplits.find((s) => s.userId === user?.id);
+  const myShare = mySplit ? mySplit.amountOwed : 0;
+  const amountPaidByUser = isPayer ? totalAmountMinor : 0;
+  const userNetBalance = amountPaidByUser - myShare;
 
   // Mutation
   const createExpenseMutation = useMutation({
@@ -243,11 +309,11 @@ function AddExpenseForm() {
       description: description.trim(),
       totalAmount: totalAmountMinor,
       splitType,
-      paidBy: paidBy || user?.id,
+      paidBy: effectivePayerId,
       splits: calculatedSplits.map((s) => ({
         userId: s.userId,
         amountOwed: s.amountOwed,
-        percentage: splitType === 'PERCENTAGE' ? parseFloat(percentages[s.userId] || '0') : undefined
+        percentage: splitType === 'PERCENTAGE' ? s.pct : undefined
       }))
     };
 
@@ -294,7 +360,7 @@ function AddExpenseForm() {
             <UserCheck className="w-5 h-5" />
             <div>
               <p className="text-xs font-bold">A Friend</p>
-              <p className="text-[10px] opacity-75">Quick 1-to-1 split</p>
+              <p className="text-[10px] opacity-75">Direct 1-to-1 split</p>
             </div>
           </button>
 
@@ -423,10 +489,10 @@ function AddExpenseForm() {
           </div>
         </div>
 
-        {/* Paid by */}
+        {/* Paid by (Independent from Split!) */}
         <div>
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-            Paid by
+            Paid by (Who covered the bill?)
           </label>
           {splitMode === 'FRIEND' ? (
             <select
@@ -434,8 +500,8 @@ function AddExpenseForm() {
               onChange={(e) => setPaidBy(e.target.value)}
               className="w-full px-3.5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
-              <option value={user?.id}>You paid</option>
-              {activeFriend && <option value={activeFriend.friendId}>{activeFriend.friend.name} paid</option>}
+              <option value={user?.id}>You paid full amount</option>
+              {activeFriend && <option value={activeFriend.friendId}>{activeFriend.friend.name} paid full amount</option>}
             </select>
           ) : (
             <select
@@ -445,72 +511,179 @@ function AddExpenseForm() {
             >
               {activeGroup?.members.map((m) => (
                 <option key={m.userId} value={m.userId}>
-                  {m.user.name} {m.userId === user?.id && '(You)'}
+                  {m.user.name} {m.userId === user?.id ? '(You paid)' : 'paid full amount'}
                 </option>
               ))}
             </select>
           )}
+          <p className="text-[10px] text-slate-400 mt-1">
+            The person who paid will be credited the full purchase amount.
+          </p>
         </div>
 
-        {/* Split Type Selector */}
+        {/* Split Type Selector: Equal / Custom / Percentage */}
         <div>
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-            Split Mode
+            Split Mode (How is the expense shared?)
           </label>
           <div className="grid grid-cols-3 gap-2">
-            {(['EQUAL', 'EXACT', 'PERCENTAGE'] as SplitType[]).map((type) => (
+            {[
+              { type: 'EQUAL' as SplitType, label: 'Equal' },
+              { type: 'EXACT' as SplitType, label: 'Custom' },
+              { type: 'PERCENTAGE' as SplitType, label: 'Percentage' }
+            ].map(({ type, label }) => (
               <button
                 key={type}
                 type="button"
                 onClick={() => setSplitType(type)}
-                className={`py-2 text-xs font-bold rounded-xl border transition-all ${
+                className={`py-2.5 text-xs font-bold rounded-xl border transition-all ${
                   splitType === type
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-500 dark:border-emerald-500'
-                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-500 dark:border-emerald-500 shadow-sm'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-slate-300'
                 }`}
               >
-                {type === 'EQUAL' ? (splitMode === 'FRIEND' ? '50 / 50' : 'Equal') : type === 'EXACT' ? 'Exact ₹' : 'Percent %'}
+                {label}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Live Calculation / Real-time Breakdown */}
-        {splitMode === 'FRIEND' && activeFriend && totalAmountMinor > 0 && (
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-              Split Summary
-            </h4>
-            <div className="space-y-2">
-              {calculatedSplits.map((s) => (
-                <div key={s.userId} className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-900 dark:text-white">{s.name}</span>
-                  <span className="font-bold text-slate-700 dark:text-slate-300">
-                    {formatMinorCurrency(s.amountOwed)}
+        {/* 1. Friend Mode Custom or Percentage Inputs */}
+        {splitMode === 'FRIEND' && activeFriend && user && (
+          <div>
+            {splitType === 'EXACT' && (
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Custom Shares (₹)
+                  </label>
+                  <span className="text-[11px] text-slate-500">
+                    Total: {formatMinorCurrency(totalAmountMinor)}
                   </span>
                 </div>
-              ))}
-            </div>
 
-            <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-              {(paidBy || user?.id) === user?.id ? (
-                <span>
-                  {activeFriend.friend.name} will owe you{' '}
-                  {formatMinorCurrency(calculatedSplits.find((s) => s.userId === activeFriend.friendId)?.amountOwed || 0)}
-                </span>
-              ) : (
-                <span className="text-rose-600 dark:text-rose-400">
-                  You will owe {activeFriend.friend.name}{' '}
-                  {formatMinorCurrency(calculatedSplits.find((s) => s.userId === user?.id)?.amountOwed || 0)}
-                </span>
-              )}
-            </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                      Your share (You)
+                    </span>
+                    <div className="relative w-36">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={exactAmounts[user.id] || ''}
+                        onChange={(e) =>
+                          setExactAmounts((prev) => ({
+                            ...prev,
+                            [user.id]: e.target.value
+                          }))
+                        }
+                        placeholder="0.00"
+                        className="w-full pl-7 pr-3 py-1.5 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                      {activeFriend.friend.name}&apos;s share
+                    </span>
+                    <div className="relative w-36">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={exactAmounts[activeFriend.friendId] || ''}
+                        onChange={(e) =>
+                          setExactAmounts((prev) => ({
+                            ...prev,
+                            [activeFriend.friendId]: e.target.value
+                          }))
+                        }
+                        placeholder="0.00"
+                        className="w-full pl-7 pr-3 py-1.5 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {splitType === 'PERCENTAGE' && (
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Split by Percentage (%)
+                  </label>
+                  <span className="text-[11px] text-slate-500">
+                    Total: 100%
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 block">
+                        Your share
+                      </span>
+                      <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatMinorCurrency(calculatedSplits.find((s) => s.userId === user.id)?.amountOwed || 0)}
+                      </span>
+                    </div>
+                    <div className="relative w-28">
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={percentages[user.id] || ''}
+                        onChange={(e) =>
+                          setPercentages((prev) => ({
+                            ...prev,
+                            [user.id]: e.target.value
+                          }))
+                        }
+                        placeholder="50"
+                        className="w-full pr-7 pl-3 py-1.5 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 block">
+                        {activeFriend.friend.name}&apos;s share
+                      </span>
+                      <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatMinorCurrency(calculatedSplits.find((s) => s.userId === activeFriend.friendId)?.amountOwed || 0)}
+                      </span>
+                    </div>
+                    <div className="relative w-28">
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={percentages[activeFriend.friendId] || ''}
+                        onChange={(e) =>
+                          setPercentages((prev) => ({
+                            ...prev,
+                            [activeFriend.friendId]: e.target.value
+                          }))
+                        }
+                        placeholder="50"
+                        className="w-full pr-7 pl-3 py-1.5 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Group Participants Selector */}
+        {/* 2. Group Participants Selector & Custom/Percentage inputs */}
         {splitMode === 'GROUP' && (
-          <div className="pt-2">
+          <div className="pt-1">
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
               Split Between Group Members
             </label>
@@ -536,13 +709,20 @@ function AddExpenseForm() {
                         }
                         className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-400 accent-emerald-500"
                       />
-                      <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                        {m.user.name} {m.userId === user?.id && '(You)'}
-                      </span>
+                      <div>
+                        <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                          {m.user.name} {m.userId === user?.id && '(You)'}
+                        </span>
+                        {splitType === 'PERCENTAGE' && isSelected && (
+                          <span className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                            → {splitResult ? formatMinorCurrency(splitResult.amountOwed) : '₹0'}
+                          </span>
+                        )}
+                      </div>
                     </label>
 
                     {isSelected && (
-                      <div className="w-28 text-right">
+                      <div className="w-32 text-right">
                         {splitType === 'EQUAL' && (
                           <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                             {splitResult ? formatMinorCurrency(splitResult.amountOwed) : '₹0'}
@@ -562,7 +742,7 @@ function AddExpenseForm() {
                                   [m.userId]: e.target.value
                                 }))
                               }
-                              placeholder="0"
+                              placeholder="0.00"
                               className="w-full pl-5 pr-2 py-1.5 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
                             />
                           </div>
@@ -591,6 +771,71 @@ function AddExpenseForm() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Live Calculation / Perspective Breakdown Card */}
+        {totalAmountMinor > 0 && calculatedSplits.length > 0 && (
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Clear Balance Breakdown
+            </h4>
+
+            {/* Distinguish all 4 key metrics clearly */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] text-slate-400 block font-medium">Paid by</span>
+                <span className="font-bold text-slate-900 dark:text-white truncate block">
+                  {payerName} ({formatMinorCurrency(totalAmountMinor)})
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] text-slate-400 block font-medium">Your share</span>
+                <span className="font-bold text-slate-900 dark:text-white block">
+                  {formatMinorCurrency(myShare)}
+                </span>
+              </div>
+            </div>
+
+            {/* Net Debt/Credit Status for You */}
+            <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-xs">
+              {userNetBalance > 0 ? (
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-slate-600 dark:text-slate-400">You are owed</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                    +{formatMinorCurrency(userNetBalance)}
+                  </span>
+                </div>
+              ) : userNetBalance < 0 ? (
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-slate-600 dark:text-slate-400">You owe ({payerName})</span>
+                  <span className="font-bold text-rose-600 dark:text-rose-400 text-sm">
+                    -{formatMinorCurrency(Math.abs(userNetBalance))}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-slate-600 dark:text-slate-400">Your balance</span>
+                  <span className="font-bold text-slate-500 text-sm">All settled (₹0)</span>
+                </div>
+              )}
+            </div>
+
+            {/* Individual Breakdown for all participants */}
+            <div className="space-y-1.5 pt-1">
+              <span className="text-[11px] font-semibold text-slate-500 block">Participants Responsibility:</span>
+              {calculatedSplits.map((s) => (
+                <div key={s.userId} className="flex items-center justify-between text-xs py-1 border-b border-slate-100 dark:border-slate-700/50 last:border-none">
+                  <span className="text-slate-700 dark:text-slate-300">
+                    {s.name} {s.userId === user?.id && '(You)'}
+                  </span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {formatMinorCurrency(s.amountOwed)} {s.pct !== undefined ? `(${s.pct}%)` : ''}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}

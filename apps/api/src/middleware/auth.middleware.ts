@@ -57,3 +57,36 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     next(error);
   }
 }
+
+export async function optionalAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    const token = req.cookies?.session_token || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+    if (!token) return next();
+
+    const decoded = jwt.verify(token, env.SESSION_SECRET) as JwtPayload;
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        telegramChatId: true,
+        telegramUsername: true,
+        telegramConnected: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    if (user) {
+      req.user = {
+        ...user,
+        createdAt: user.createdAt.toISOString(),
+        updatedAt: user.updatedAt.toISOString()
+      };
+    }
+  } catch {
+    // Ignore token errors for optional auth
+  }
+  next();
+}

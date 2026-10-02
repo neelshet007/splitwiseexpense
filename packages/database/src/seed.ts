@@ -72,6 +72,7 @@ async function main() {
   const group = await prisma.group.create({
     data: {
       name: 'Mumbai Friends',
+      inviteCode: 'MUM-7K4P2X',
       createdBy: neel.id,
       members: {
         create: [

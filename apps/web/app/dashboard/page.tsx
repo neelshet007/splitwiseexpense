@@ -116,22 +116,28 @@ export default function DashboardPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2 pt-4 border-t border-slate-800">
-            <div>
-              <p className="text-[11px] text-slate-400 font-medium">You paid</p>
-              <p className="text-sm font-semibold text-slate-200 mt-0.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 border-t border-slate-800">
+            <div className="p-2.5 rounded-xl bg-slate-800/50 border border-slate-800/80">
+              <p className="text-[11px] text-slate-400 font-medium">Paid by you</p>
+              <p className="text-sm font-bold text-slate-200 mt-0.5 truncate">
                 {formatMinorCurrency(summary.totalPaid)}
               </p>
             </div>
-            <div>
+            <div className="p-2.5 rounded-xl bg-slate-800/50 border border-slate-800/80">
+              <p className="text-[11px] text-slate-400 font-medium">Your share</p>
+              <p className="text-sm font-bold text-slate-300 mt-0.5 truncate">
+                {formatMinorCurrency(summary.totalShare ?? (summary.totalPaid - summary.netBalance))}
+              </p>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-800/50 border border-slate-800/80">
               <p className="text-[11px] text-slate-400 font-medium">You owe</p>
-              <p className="text-sm font-semibold text-rose-400 mt-0.5">
+              <p className="text-sm font-bold text-rose-400 mt-0.5 truncate">
                 {formatMinorCurrency(summary.totalYouOwe)}
               </p>
             </div>
-            <div>
+            <div className="p-2.5 rounded-xl bg-slate-800/50 border border-slate-800/80">
               <p className="text-[11px] text-slate-400 font-medium">You are owed</p>
-              <p className="text-sm font-semibold text-emerald-400 mt-0.5">
+              <p className="text-sm font-bold text-emerald-400 mt-0.5 truncate">
                 {formatMinorCurrency(summary.totalOwedToYou)}
               </p>
             </div>

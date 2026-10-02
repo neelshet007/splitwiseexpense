@@ -75,6 +75,7 @@ model TelegramConnectToken {
 model Group {
   id          String   @id @default(cuid())
   name        String
+  inviteCode  String   @unique @default(cuid())
   createdBy   String
   creator     User     @relation("GroupCreator", fields: [createdBy], references: [id], onDelete: Restrict)
   createdAt   DateTime @default(now())
@@ -85,6 +86,7 @@ model Group {
   summaries   MonthlySummaryLog[]
 
   @@index([createdBy])
+  @@index([inviteCode])
 }
 
 model GroupMember {

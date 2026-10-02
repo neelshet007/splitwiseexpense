@@ -22,6 +22,7 @@ export interface GroupMemberItem {
 export interface GroupItem {
   id: string;
   name: string;
+  inviteCode: string;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -30,6 +31,21 @@ export interface GroupItem {
     expenses: number;
     members: number;
   };
+}
+
+export interface GroupPreviewResponse {
+  id: string;
+  name: string;
+  inviteCode: string;
+  memberCount: number;
+  creatorName: string;
+  isMember: boolean;
+}
+
+export interface JoinGroupResponse {
+  group: GroupItem;
+  alreadyMember: boolean;
+  message: string;
 }
 
 export interface FriendItem {
@@ -113,6 +129,7 @@ export interface GroupSettlementsResponse {
 export interface DashboardSummary {
   user: SafeUser;
   totalPaid: number;
+  totalShare: number;
   totalOwedToYou: number;
   totalYouOwe: number;
   netBalance: number;

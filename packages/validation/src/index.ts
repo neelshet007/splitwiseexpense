@@ -52,6 +52,12 @@ export const addMemberSchema = z.object({
 
 export type AddMemberInput = z.infer<typeof addMemberSchema>;
 
+export const joinGroupSchema = z.object({
+  inviteCode: z.string().trim().min(4, 'Invite code must be at least 4 characters').max(30, 'Invite code cannot exceed 30 characters')
+});
+
+export type JoinGroupInput = z.infer<typeof joinGroupSchema>;
+
 export const addFriendSchema = z.object({
   email: z.string().trim().toLowerCase().email('Invalid email address')
 });

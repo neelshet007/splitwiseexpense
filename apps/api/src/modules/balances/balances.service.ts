@@ -142,6 +142,7 @@ export class BalanceService {
 
     // Calculate aggregated group balances
     let totalPaid = 0;
+    let totalShare = 0;
     let totalOwedToYou = 0;
     let totalYouOwe = 0;
 
@@ -151,6 +152,7 @@ export class BalanceService {
 
       if (userBalance) {
         totalPaid += userBalance.totalPaid;
+        totalShare += userBalance.totalShare;
         if (userBalance.netBalance > 0) {
           totalOwedToYou += userBalance.netBalance;
         } else if (userBalance.netBalance < 0) {
@@ -165,6 +167,7 @@ export class BalanceService {
 
     for (const friend of friends) {
       totalPaid += friend.totalPaid;
+      totalShare += friend.totalShare;
       if (friend.netBalance > 0) {
         totalOwedToYou += friend.netBalance;
       } else if (friend.netBalance < 0) {
@@ -216,9 +219,10 @@ export class BalanceService {
     return {
       user: AuthService.toSafeUser(user),
       totalPaid,
+      totalShare,
       totalOwedToYou,
       totalYouOwe,
-      netBalance: totalOwedToYou - totalYouOwe,
+      netBalance: totalPaid - totalShare,
       recentExpenses,
       groups,
       friends

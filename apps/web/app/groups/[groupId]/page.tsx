@@ -19,7 +19,11 @@ import {
   UserPlus,
   Loader2,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Copy,
+  Check,
+  Share2,
+  Sparkles
 } from 'lucide-react';
 
 export default function GroupDetailPage() {
@@ -31,6 +35,7 @@ export default function GroupDetailPage() {
   const [activeTab, setActiveTab] = useState<'expenses' | 'balances' | 'members'>('expenses');
   const [memberEmail, setMemberEmail] = useState('');
   const [addMemberMsg, setAddMemberMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   // 1. Group info
   const { data: group, isLoading: groupLoading } = useQuery<GroupItem>({
@@ -39,11 +44,16 @@ export default function GroupDetailPage() {
   });
 
   // 2. Group expenses
-  const { data: expensesData, isLoading: expensesLoading } = useQuery<{ expenses: ExpenseItem[]; total: number }>({
+  const { data: expensesData, isLoading: expensesLoading } = useQuery<any>({
     queryKey: ['group-expenses', groupId],
-    queryFn: () => apiFetch<{ expenses: ExpenseItem[]; total: number }>(`/api/groups/${groupId}/expenses`),
+    queryFn: () => apiFetch<any>(`/api/groups/${groupId}/expenses`),
     enabled: activeTab === 'expenses'
   });
+
+  // Safely extract expenses array whether returned as array or { expenses: [] }
+  const expensesList: ExpenseItem[] = Array.isArray(expensesData)
+    ? expensesData
+    : expensesData?.expenses || [];
 
   // 3. Group balances
   const { data: balancesData } = useQuery<GroupBalancesResponse>({
@@ -56,6 +66,45 @@ export default function GroupDetailPage() {
     queryKey: ['group-settlements', groupId],
     queryFn: () => apiFetch<GroupSettlementsResponse>(`/api/groups/${groupId}/settlements`)
   });
+
+  const handleCopyInviteCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    } catch {
+      // Fallback
+    }
+  };
+
+  const handleShareInvite = async (groupName: string, inviteCode: string) => {
+    const inviteUrl = `${window.location.origin}/invite/${inviteCode}`;
+    const shareData = {
+      title: `Join ${groupName} on Splitwise Private`,
+      text: `Join our expense group "${groupName}". Use invite code ${inviteCode} or tap the link:`,
+      url: inviteUrl
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error('Error sharing:', err);
+        }
+      }
+    }
+
+    // Fallback: copy invite link to clipboard
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    } catch {
+      // Ignore
+    }
+  };
 
   // Add member mutation
   const addMemberMutation = useMutation({
@@ -127,7 +176,7 @@ export default function GroupDetailPage() {
         </div>
 
         {/* Group Header Card */}
-        <div className="p-5 rounded-3xl bg-slate-900 text-white shadow-xl shadow-slate-950/10 mb-5">
+        <div className="p-5 rounded-3xl bg-slate-900 text-white shadow-xl shadow-slate-950/10 mb-4">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white font-bold flex items-center justify-center text-xl shadow-md">
               {group.name.charAt(0)}
@@ -153,6 +202,40 @@ export default function GroupDetailPage() {
                 )}
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Shareable Invite Card */}
+        <div className="p-4 rounded-2xl bg-white dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Shareable Group Code</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm sm:text-base font-extrabold tracking-wider text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 select-all">
+                {group.inviteCode}
+              </span>
+              <span className="text-[11px] text-slate-400">Never exposes database IDs</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleCopyInviteCode(group.inviteCode)}
+              className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors active:scale-95"
+            >
+              {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedCode ? 'Copied!' : 'Copy ID'}</span>
+            </button>
+
+            <button
+              onClick={() => handleShareInvite(group.name, group.inviteCode)}
+              className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-sm active:scale-95"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share Invite</span>
+            </button>
           </div>
         </div>
 
@@ -201,7 +284,7 @@ export default function GroupDetailPage() {
                 <div className="h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl"></div>
                 <div className="h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl"></div>
               </div>
-            ) : expensesData?.expenses.length === 0 ? (
+            ) : expensesList.length === 0 ? (
               <div className="py-12 text-center text-slate-400 text-xs">
                 <Receipt className="w-8 h-8 mx-auto mb-2 opacity-40" />
                 <p>No expenses in this group yet.</p>
@@ -214,7 +297,7 @@ export default function GroupDetailPage() {
               </div>
             ) : (
               <div className="space-y-2.5">
-                {expensesData?.expenses.map((exp) => {
+                {expensesList.map((exp) => {
                   const isPayer = exp.paidBy === user?.id;
                   const mySplit = exp.splits.find((s) => s.userId === user?.id);
                   const myShare = mySplit ? mySplit.amountOwed : 0;
