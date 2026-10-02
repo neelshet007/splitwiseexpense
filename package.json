@@ -1,0 +1,20 @@
+{
+  "name": "splitwise-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "pnpm --filter @splitwise/api dev",
+    "dev:all": "pnpm --parallel dev",
+    "dev:web": "pnpm --filter @splitwise/web dev",
+    "dev:api": "pnpm --filter @splitwise/api dev",
+    "build": "pnpm --filter @splitwise/types build && pnpm --filter @splitwise/validation build && pnpm --filter @splitwise/database build && pnpm --filter @splitwise/api build && pnpm --filter @splitwise/web build",
+    "test": "pnpm --filter @splitwise/api test",
+    "db:generate": "pnpm --filter @splitwise/database generate",
+    "db:migrate": "pnpm --filter @splitwise/database migrate",
+    "db:push": "pnpm --filter @splitwise/database push",
+    "db:seed": "pnpm --filter @splitwise/database seed"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

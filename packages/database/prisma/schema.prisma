@@ -1,0 +1,130 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  name               String
+  passwordHash       String
+  telegramChatId     String?   @unique
+  telegramUsername   String?
+  telegramConnected  Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Relationships
+  groupMemberships   GroupMember[]
+  createdGroups      Group[]                 @relation("GroupCreator")
+  expensesPaid       Expense[]               @relation("ExpensePayer")
+  expensesCreated    Expense[]               @relation("ExpenseCreator")
+  expenseSplits      ExpenseSplit[]
+  passwordResets     PasswordReset[]
+  telegramTokens     TelegramConnectToken[]
+
+  @@index([email])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model TelegramConnectToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  createdBy   String
+  creator     User     @relation("GroupCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members     GroupMember[]
+  expenses    Expense[]
+  summaries   MonthlySummaryLog[]
+
+  @@index([createdBy])
+}
+
+model GroupMember {
+  id        String   @id @default(cuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime @default(now())
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+model Expense {
+  id          String         @id @default(cuid())
+  groupId     String
+  group       Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  description String
+  totalAmount Int            // Integer minor units (e.g., paise/cents: 120000 = ₹1,200.00)
+  splitType   String         @default("EQUAL") // EQUAL | EXACT | PERCENTAGE
+  paidBy      String
+  payer       User           @relation("ExpensePayer", fields: [paidBy], references: [id], onDelete: Restrict)
+  createdBy   String
+  creator     User           @relation("ExpenseCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  expenseDate DateTime       @default(now())
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  splits      ExpenseSplit[]
+
+  @@index([groupId, expenseDate(sort: Desc)])
+  @@index([paidBy])
+  @@index([groupId])
+}
+
+model ExpenseSplit {
+  id         String   @id @default(cuid())
+  expenseId  String
+  expense    Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amountOwed Int      // Minor units (paise/cents)
+
+  @@unique([expenseId, userId])
+  @@index([expenseId])
+  @@index([userId])
+}
+
+model MonthlySummaryLog {
+  id         String   @id @default(cuid())
+  groupId    String
+  group      Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  yearMonth  String   // e.g. "2026-10"
+  executedAt DateTime @default(now())
+
+  @@unique([groupId, yearMonth])
+  @@index([groupId])
+}
