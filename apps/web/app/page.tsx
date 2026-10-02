@@ -17,11 +17,55 @@ import {
   Layers
 } from 'lucide-react';
 
+function InstagramIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+    </svg>
+  );
+}
+
 export default function LandingPage() {
   const { user, isLoading } = useAuth();
 
   return (
     <div className="min-h-screen bg-[#fafbfc] dark:bg-[#090d16] text-slate-900 dark:text-slate-100 flex flex-col selection:bg-emerald-500 selection:text-white">
+      {/* Top Creator Announcement Bar */}
+      <aside aria-label="Creator notice" className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white py-2.5 px-4 text-xs border-b border-slate-800 shadow-sm relative z-50">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-medium text-slate-300">
+              Made with <Heart className="w-3 h-3 text-rose-500 fill-rose-500 inline mx-0.5" /> by <strong className="text-white font-semibold">Neel Sheth</strong>
+            </span>
+            <span className="hidden sm:inline text-slate-400">· for people who are tired of ads</span>
+          </div>
+
+          <a
+            href="https://instagram.com/neel_afterhours"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-500/15 border border-pink-500/30 text-pink-300 hover:text-white hover:bg-pink-500/25 transition-all text-xs font-semibold shrink-0 group shadow-sm"
+            title="Follow Neel Sheth on Instagram"
+          >
+            <InstagramIcon className="w-3.5 h-3.5 text-pink-400 group-hover:scale-110 transition-transform" />
+            <span>@neel_afterhours</span>
+            <ArrowRight className="w-3 h-3 text-pink-400/70 group-hover:translate-x-0.5 transition-transform" />
+          </a>
+        </div>
+      </aside>
+
       {/* Top Navigation */}
       <header className="sticky top-0 z-40 bg-[#fafbfc]/80 dark:bg-[#090d16]/80 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60">
         <div className="max-w-4xl mx-auto px-5 h-16 flex items-center justify-between">
@@ -67,9 +111,19 @@ export default function LandingPage() {
       <main className="flex-1 max-w-4xl mx-auto px-5 w-full">
         {/* Hero Section */}
         <section className="pt-12 sm:pt-20 pb-12 sm:pb-16 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/70 dark:border-emerald-800/50 text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 mb-6 animate-in fade-in slide-in-from-top-3">
-            <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
-            <span>Made with love for people who are tired of ads</span>
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/60 text-xs font-semibold text-emerald-900 dark:text-emerald-300 mb-6 shadow-sm animate-in fade-in slide-in-from-top-3">
+            <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500 shrink-0" />
+            <span>Made with love by <strong>Neel Sheth</strong></span>
+            <span className="text-emerald-300 dark:text-emerald-700">·</span>
+            <a
+              href="https://instagram.com/neel_afterhours"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-pink-600 dark:text-pink-400 hover:underline"
+            >
+              <InstagramIcon className="w-3 h-3 text-pink-500" />
+              <span>@neel_afterhours</span>
+            </a>
           </div>
 
           <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-slate-950 dark:text-white leading-[1.12] mb-5">
