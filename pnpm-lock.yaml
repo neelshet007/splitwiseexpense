@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      next:
+        specifier: ^15.1.7
+        version: 15.5.27(@types/node@22.20.4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
