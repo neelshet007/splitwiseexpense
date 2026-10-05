@@ -10,7 +10,7 @@ export const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: parseInt(process.env.PORT || '4000', 10),
   APP_URL: process.env.APP_URL || 'http://localhost:3000',
-  API_URL: process.env.API_URL || 'http://localhost:4000',
+  API_URL: process.env.API_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:4000',
   DATABASE_URL: process.env.DATABASE_URL || 'postgresql://postgres:postgrespassword@localhost:5432/splitwise_db?schema=public',
   SESSION_SECRET: process.env.SESSION_SECRET || 'dev-super-secure-session-secret-min-32-chars-long!',
   SESSION_EXPIRY_DAYS: parseInt(process.env.SESSION_EXPIRY_DAYS || '7', 10),

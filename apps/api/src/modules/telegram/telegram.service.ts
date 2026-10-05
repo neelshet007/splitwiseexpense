@@ -78,6 +78,44 @@ export class TelegramService {
   }
 
   /**
+   * Automatically registers the Telegram Webhook with Telegram servers in production.
+   */
+  static async autoRegisterWebhook(): Promise<void> {
+    if (!env.TELEGRAM_BOT_TOKEN) return;
+
+    const publicUrl = env.API_URL?.replace(/\/$/, '');
+    if (!publicUrl || publicUrl.includes('localhost') || publicUrl.includes('127.0.0.1')) {
+      return;
+    }
+
+    try {
+      const webhookUrl = `${publicUrl}/api/telegram/webhook`;
+      const body: Record<string, any> = {
+        url: webhookUrl,
+        drop_pending_updates: false
+      };
+      if (env.TELEGRAM_WEBHOOK_SECRET) {
+        body.secret_token = env.TELEGRAM_WEBHOOK_SECRET;
+      }
+
+      const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (data.ok) {
+        logger.info('🤖 Telegram webhook registered successfully', { url: webhookUrl });
+      } else {
+        logger.warn('Failed to auto-register Telegram webhook', { description: data.description });
+      }
+    } catch (err) {
+      logger.error('Error auto-registering Telegram webhook', { error: (err as Error).message });
+    }
+  }
+
+  /**
    * Sends an outbound HTML text message to a specific Telegram chat ID.
    */
   static async sendMessage(chatId: string, text: string): Promise<boolean> {
