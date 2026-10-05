@@ -47,17 +47,18 @@ export class AuthService {
     res.cookie('session_token', token, {
       httpOnly: true,
       secure: isProd,
-      sameSite: 'lax',
+      sameSite: isProd ? 'none' : 'lax',
       maxAge: env.SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
       path: '/'
     });
   }
 
   static clearSessionCookie(res: Response): void {
+    const isProd = env.isProduction;
     res.clearCookie('session_token', {
       httpOnly: true,
-      secure: env.isProduction,
-      sameSite: 'lax',
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
       path: '/'
     });
   }
