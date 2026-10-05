@@ -23,11 +23,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   const refreshUser = async () => {
+    // If not in browser or no stored token or cookie, skip network call for instant resolution
+    const hasToken = typeof window !== 'undefined' && (
+      !!localStorage.getItem('splitwise_token') || document.cookie.includes('session_token')
+    );
+
+    if (!hasToken) {
+      setUser(null);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const userData = await apiFetch<SafeUser>('/api/auth/me');
       setUser(userData);
     } catch {
       setUser(null);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('splitwise_token');
+        document.cookie = 'session_token=; path=/; max-age=0; SameSite=Lax; secure';
+      }
     } finally {
       setIsLoading(false);
     }
@@ -38,19 +53,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = async (data: LoginInput) => {
-    const res = await apiFetch<{ user: SafeUser }>('/api/auth/login', {
+    const res = await apiFetch<{ user: SafeUser; token: string }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify(data)
     });
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('splitwise_token', res.token);
+      document.cookie = `session_token=${res.token}; path=/; max-age=604800; SameSite=Lax; secure`;
+    }
+
     setUser(res.user);
     router.push('/dashboard');
   };
 
   const register = async (data: RegisterInput, redirect: boolean = true) => {
-    const res = await apiFetch<{ user: SafeUser }>('/api/auth/register', {
+    const res = await apiFetch<{ user: SafeUser; token: string }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(data)
     });
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('splitwise_token', res.token);
+      document.cookie = `session_token=${res.token}; path=/; max-age=604800; SameSite=Lax; secure`;
+    }
+
     setUser(res.user);
     if (redirect) {
       router.push('/dashboard');
@@ -61,10 +88,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     try {
       await apiFetch('/api/auth/logout', { method: 'POST' });
-    } finally {
-      setUser(null);
-      router.push('/login');
+    } catch {}
+
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('splitwise_token');
+      document.cookie = 'session_token=; path=/; max-age=0; SameSite=Lax; secure';
     }
+
+    setUser(null);
+    router.push('/login');
   };
 
   return (

@@ -12,9 +12,9 @@ import { logger } from '../../utils/logger';
 
 const ARGON2_OPTIONS: argon2.Options = {
   type: argon2.argon2id,
-  memoryCost: 65536,
-  timeCost: 3,
-  parallelism: 4
+  memoryCost: 19456,
+  timeCost: 2,
+  parallelism: 1
 };
 
 export class AuthService {
@@ -103,10 +103,7 @@ export class AuthService {
       where: { email: normalizedEmail }
     });
 
-    // Timing-attack safe generic failure
     if (!user) {
-      // Fake verify to simulate constant time
-      await argon2.verify('$argon2id$v=19$m=65536,t=3,p=4$fakeSalt$fakeHash', data.password).catch(() => {});
       throw new UnauthorizedError('Invalid email or password.');
     }
 

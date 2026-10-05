@@ -35,10 +35,13 @@ export async function apiFetch<T>(endpoint: string, options: ApiFetchOptions = {
     }
   }
 
+  const token = typeof window !== 'undefined' ? localStorage.getItem('splitwise_token') : null;
+
   const res = await fetch(url, {
     credentials: 'include', // Ensures HTTP-only cookies are automatically sent & received
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers
     },
     ...rest
