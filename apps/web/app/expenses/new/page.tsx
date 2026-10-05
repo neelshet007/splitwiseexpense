@@ -29,8 +29,14 @@ function AddExpenseForm() {
   const initialTripId = searchParams.get('tripId') || '';
   const initialGroupId = searchParams.get('groupId') || '';
   const initialFriendId = searchParams.get('friendId') || '';
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/login');
+    }
+  }, [authLoading, user, router]);
 
   // Mode: 'TRIP' | 'GROUP' | 'FRIEND'
   const [splitMode, setSplitMode] = useState<'TRIP' | 'GROUP' | 'FRIEND'>(
@@ -534,8 +540,16 @@ function AddExpenseForm() {
     createExpenseMutation.mutate(payload);
   };
 
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin"></div>
+      </div>
+    );
+  }
+
   return (
-    <div className="px-5 pt-6 pb-20">
+    <div className="px-4 sm:px-5 pt-5 pb-12">
       {/* Top Header */}
       <div className="flex items-center gap-3 mb-6">
         <Link
@@ -1013,7 +1027,7 @@ function AddExpenseForm() {
                         key={m.userId}
                         className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800"
                       >
-                        <label className="flex items-center gap-2.5 cursor-pointer flex-1">
+                        <label className="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0 pr-2">
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -1023,15 +1037,15 @@ function AddExpenseForm() {
                                 [m.userId]: e.target.checked
                               }))
                             }
-                            className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-400 accent-emerald-500"
+                            className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-400 accent-emerald-500 shrink-0"
                           />
-                          <span className="text-xs font-semibold text-slate-900 dark:text-white">
+                          <span className="text-xs font-semibold text-slate-900 dark:text-white truncate block">
                             {m.user.name} {m.userId === user?.id && '(You)'}
                           </span>
                         </label>
 
                         {isSelected && (
-                          <div className="text-right">
+                          <div className="text-right shrink-0">
                             <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
                               {splitResult ? `${m.user.name} owes ${formatMinorCurrency(splitResult.amountOwed)}` : '₹0'}
                             </span>
@@ -1087,7 +1101,7 @@ function AddExpenseForm() {
                     key={m.userId}
                     className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800"
                   >
-                    <label className="flex items-center gap-2.5 cursor-pointer flex-1">
+                    <label className="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0 pr-2">
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -1097,14 +1111,14 @@ function AddExpenseForm() {
                             [m.userId]: e.target.checked
                           }))
                         }
-                        className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-400 accent-emerald-500"
+                        className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-400 accent-emerald-500 shrink-0"
                       />
-                      <div>
-                        <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate block">
                           {m.user.name} {m.userId === user?.id && '(You)'}
                         </span>
                         {splitType === 'PERCENTAGE' && isSelected && (
-                          <span className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                          <span className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400 truncate">
                             → {splitResult ? formatMinorCurrency(splitResult.amountOwed) : '₹0'}
                           </span>
                         )}
@@ -1112,7 +1126,7 @@ function AddExpenseForm() {
                     </label>
 
                     {isSelected && (
-                      <div className="w-32 text-right">
+                      <div className="w-28 sm:w-32 text-right shrink-0">
                         {splitType === 'EQUAL' && (
                           <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                             {splitResult ? formatMinorCurrency(splitResult.amountOwed) : '₹0'}
@@ -1213,7 +1227,7 @@ function AddExpenseForm() {
 
 export default function NewExpensePage() {
   return (
-    <AppShell>
+    <AppShell showNav={false}>
       <Suspense fallback={<div className="p-6 text-center text-xs text-slate-400">Loading expense form...</div>}>
         <AddExpenseForm />
       </Suspense>

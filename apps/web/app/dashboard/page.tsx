@@ -59,7 +59,15 @@ export default function DashboardPage() {
     enabled: !!user
   });
 
-  if (authLoading || isLoading) {
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
     return (
       <AppShell>
         <div className="p-6 space-y-6 animate-pulse">
