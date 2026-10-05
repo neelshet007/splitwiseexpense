@@ -95,8 +95,17 @@ export class TelegramController {
 
   static async setupWebhook(req: Request, res: Response, next: NextFunction) {
     try {
-      await TelegramService.autoRegisterWebhook();
-      return res.status(200).json({ success: true, message: 'Telegram webhook registration triggered' });
+      const result = await TelegramService.autoRegisterWebhook();
+      return res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getWebhookInfo(req: Request, res: Response, next: NextFunction) {
+    try {
+      const info = await TelegramService.getWebhookInfo();
+      return res.status(200).json(info);
     } catch (error) {
       next(error);
     }

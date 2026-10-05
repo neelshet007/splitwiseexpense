@@ -46,9 +46,9 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(requestLogger);
 
-// 2. Health Check
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+// 2. Health & Root Check (handles Render/monitoring pings on / and /health)
+app.all(['/', '/health'], (req, res) => {
+  res.status(200).json({ status: 'ok', service: 'splitwise-api', timestamp: new Date().toISOString() });
 });
 
 // 3. API Routes

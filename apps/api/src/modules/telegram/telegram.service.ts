@@ -78,41 +78,87 @@ export class TelegramService {
   }
 
   /**
-   * Automatically registers the Telegram Webhook with Telegram servers in production.
+   * Returns current webhook status directly from Telegram servers.
    */
-  static async autoRegisterWebhook(): Promise<void> {
-    if (!env.TELEGRAM_BOT_TOKEN) return;
-
-    const publicUrl = env.API_URL?.replace(/\/$/, '');
-    if (!publicUrl || publicUrl.includes('localhost') || publicUrl.includes('127.0.0.1')) {
-      return;
+  static async getWebhookInfo(): Promise<any> {
+    if (!env.TELEGRAM_BOT_TOKEN) {
+      return { ok: false, description: 'TELEGRAM_BOT_TOKEN is not configured.' };
     }
 
     try {
-      const webhookUrl = `${publicUrl}/api/telegram/webhook`;
-      const body: Record<string, any> = {
-        url: webhookUrl,
-        drop_pending_updates: false
+      const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getWebhookInfo`);
+      return await res.json();
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err.message,
+        cause: err.cause?.message || err.cause?.code || String(err.cause || '')
       };
-      if (env.TELEGRAM_WEBHOOK_SECRET) {
-        body.secret_token = env.TELEGRAM_WEBHOOK_SECRET;
-      }
-
-      const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (data.ok) {
-        logger.info('🤖 Telegram webhook registered successfully', { url: webhookUrl });
-      } else {
-        logger.warn('Failed to auto-register Telegram webhook', { description: data.description });
-      }
-    } catch (err) {
-      logger.error('Error auto-registering Telegram webhook', { error: (err as Error).message });
     }
+  }
+
+  /**
+   * Automatically registers the Telegram Webhook with Telegram servers in production.
+   */
+  static async autoRegisterWebhook(): Promise<{ success: boolean; url?: string; description?: string; error?: string }> {
+    if (!env.TELEGRAM_BOT_TOKEN) {
+      logger.warn('Skipping Telegram webhook registration: TELEGRAM_BOT_TOKEN is empty.');
+      return { success: false, error: 'TELEGRAM_BOT_TOKEN is empty' };
+    }
+
+    const publicUrl = env.API_URL?.replace(/\/$/, '');
+    if (!publicUrl || publicUrl.includes('localhost') || publicUrl.includes('127.0.0.1')) {
+      logger.debug('Skipping Telegram webhook auto-registration (local or missing API_URL)', { publicUrl });
+      return { success: false, error: 'API_URL is local or not set' };
+    }
+
+    const webhookUrl = `${publicUrl}/api/telegram/webhook`;
+    const body: Record<string, any> = {
+      url: webhookUrl,
+      drop_pending_updates: false
+    };
+    if (env.TELEGRAM_WEBHOOK_SECRET) {
+      body.secret_token = env.TELEGRAM_WEBHOOK_SECRET;
+    }
+
+    // Wait 2.5s on startup so container DNS and network interfaces are fully ready
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+
+    let lastError = '';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+
+        const data = (await res.json().catch(() => ({}))) as any;
+        if (data.ok) {
+          logger.info('🤖 Telegram webhook registered successfully', { url: webhookUrl });
+          return { success: true, url: webhookUrl, description: data.description };
+        } else {
+          logger.warn('Failed to auto-register Telegram webhook', {
+            description: data.description,
+            attempt
+          });
+          lastError = data.description || 'Telegram rejected webhook';
+        }
+      } catch (err: any) {
+        lastError = err.message;
+        const causeMsg = err.cause?.message || err.cause?.code || String(err.cause || '');
+        logger.error(`Error auto-registering Telegram webhook (attempt ${attempt}/3)`, {
+          error: err.message,
+          cause: causeMsg
+        });
+      }
+
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+    }
+
+    return { success: false, url: webhookUrl, error: lastError };
   }
 
   /**

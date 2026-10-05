@@ -3,7 +3,8 @@ import { logger } from '../utils/logger';
 
 export function requestLogger(req: Request, res: Response, next: NextFunction) {
   // Never log high-frequency health checks or normal successful requests
-  if (req.path === '/health') {
+  const path = req.path || req.originalUrl || req.url;
+  if (path === '/' || path === '/health') {
     return next();
   }
 
@@ -20,7 +21,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
 
     const meta = {
       method: req.method,
-      path: req.baseUrl + req.path,
+      path: req.originalUrl || (req.baseUrl || '') + (req.path || ''),
       statusCode: res.statusCode,
       durationMs: duration
     };

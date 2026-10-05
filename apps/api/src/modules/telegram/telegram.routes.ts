@@ -7,6 +7,7 @@ const router = Router();
 // Webhook endpoint (unauthenticated for user, authenticated via Telegram Secret Header)
 router.post('/webhook', TelegramController.handleWebhook);
 router.get('/setup-webhook', TelegramController.setupWebhook);
+router.get('/webhook-info', TelegramController.getWebhookInfo);
 
 // User-facing endpoints
 router.get('/status', requireAuth, TelegramController.getStatus);
