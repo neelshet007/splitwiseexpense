@@ -2,6 +2,7 @@ import { app } from './app';
 import { env } from './config/env';
 import { logger } from './utils/logger';
 import { initializeMonthlySummaryCron } from './modules/monthly-summary/monthlySummary.cron';
+import { TelegramPollingService } from './modules/telegram/telegram.polling';
 
 const server = app.listen(env.PORT, () => {
   logger.info(`🚀 Splitwise API server running on port ${env.PORT} [${env.NODE_ENV}]`);
@@ -9,6 +10,12 @@ const server = app.listen(env.PORT, () => {
 
   // Start cron scheduler
   initializeMonthlySummaryCron();
+
+  // In production (Render, etc.), Telegram updates are received via webhook: POST /api/telegram/webhook
+  // Long-polling must never run in production environments
+  if (!env.isProduction && process.env.NODE_ENV !== 'production' && process.env.ENABLE_TELEGRAM_POLLING === 'true') {
+    TelegramPollingService.startPolling();
+  }
 });
 
 // Graceful shutdown handling

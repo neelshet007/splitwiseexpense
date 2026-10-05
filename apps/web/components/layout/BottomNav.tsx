@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, UserCheck, Users, Plus, Clock, User } from 'lucide-react';
+import { Home, UserCheck, Users, Plus, Clock, User, Compass } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function BottomNav() {
@@ -11,10 +11,10 @@ export function BottomNav() {
 
   const navItems = [
     { label: 'Home', href: '/dashboard', icon: Home },
-    { label: 'Friends', href: '/friends', icon: UserCheck },
+    { label: 'Trips', href: '/trips', icon: Compass },
     { label: 'Add', href: '/expenses/new', icon: Plus, isAction: true },
+    { label: 'Friends', href: '/friends', icon: UserCheck },
     { label: 'Groups', href: '/groups', icon: Users },
-    { label: 'Activity', href: '/activity', icon: Clock },
     { label: 'Me', href: '/settings', icon: User }
   ];
 

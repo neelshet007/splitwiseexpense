@@ -125,6 +125,7 @@ export class BalanceService {
     const groups = memberships.map((m) => ({
       id: m.group.id,
       name: m.group.name,
+      inviteCode: m.group.inviteCode,
       createdBy: m.group.createdBy,
       createdAt: m.group.createdAt.toISOString(),
       updatedAt: m.group.updatedAt.toISOString(),
@@ -198,6 +199,7 @@ export class BalanceService {
     const recentExpenses = recentExpensesRaw.map((e) => ({
       id: e.id,
       groupId: e.groupId,
+      tripId: e.tripId,
       description: e.description,
       totalAmount: e.totalAmount,
       splitType: e.splitType as any,

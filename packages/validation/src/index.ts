@@ -5,14 +5,40 @@ export const registerSchema = z
     name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100, 'Name must be at most 100 characters'),
     email: z.string().trim().toLowerCase().email('Invalid email address').max(255),
     password: z.string().min(8, 'Password must be at least 8 characters').max(128, 'Password cannot exceed 128 characters'),
-    confirmPassword: z.string()
+    confirmPassword: z.string().optional(),
+    telegramUsername: z
+      .string()
+      .trim()
+      .min(2, 'Telegram username must be at least 2 characters')
+      .max(50, 'Telegram username too long')
+      .transform((val) => (val.startsWith('@') ? val : `@${val}`))
   })
-  .refine((data) => data.password === data.confirmPassword, {
+  .refine((data) => !data.confirmPassword || data.password === data.confirmPassword, {
     message: "Passwords don't match",
     path: ['confirmPassword']
   });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
+
+export const updateTelegramUsernameSchema = z.object({
+  telegramUsername: z
+    .string()
+    .trim()
+    .min(2, 'Telegram username must be at least 2 characters')
+    .max(50, 'Telegram username too long')
+    .transform((val) => (val.startsWith('@') ? val : `@${val}`))
+});
+
+export type UpdateTelegramUsernameInput = z.infer<typeof updateTelegramUsernameSchema>;
+
+export const updateNotificationPreferencesSchema = z.object({
+  notifyExpenseAdded: z.boolean().optional(),
+  notifyMonthlySummary: z.boolean().optional(),
+  notifySettlements: z.boolean().optional(),
+  notifyPasswordReset: z.boolean().optional()
+});
+
+export type UpdateNotificationPreferencesInput = z.infer<typeof updateNotificationPreferencesSchema>;
 
 export const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email('Invalid email address'),
@@ -73,11 +99,12 @@ export const splitItemSchema = z.object({
 export const createExpenseSchema = z
   .object({
     groupId: z.string().nullable().optional(),
+    tripId: z.string().nullable().optional(),
     description: z.string().trim().min(1, 'Description is required').max(255, 'Description too long'),
     totalAmount: z.number().int().positive('Total amount must be greater than zero'), // Minor units (e.g., paise)
     splitType: z.enum(['EQUAL', 'EXACT', 'PERCENTAGE', 'FULL_AMOUNT']),
     paidBy: z.string().min(1, 'Payer is required'),
-    expenseDate: z.string().datetime().optional(),
+    expenseDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
     splits: z.array(splitItemSchema).min(1, 'At least one participant is required')
   })
   .superRefine((data, ctx) => {
@@ -123,11 +150,12 @@ export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 
 export const updateExpenseSchema = z
   .object({
+    tripId: z.string().nullable().optional(),
     description: z.string().trim().min(1).max(255).optional(),
     totalAmount: z.number().int().positive().optional(),
     splitType: z.enum(['EQUAL', 'EXACT', 'PERCENTAGE', 'FULL_AMOUNT']).optional(),
     paidBy: z.string().min(1).optional(),
-    expenseDate: z.string().datetime().optional(),
+    expenseDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
     splits: z.array(splitItemSchema).min(1).optional()
   })
   .superRefine((data, ctx) => {
@@ -164,3 +192,48 @@ export const updateProfileSchema = z.object({
 });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+export const createSettlementSchema = z.object({
+  friendId: z.string().min(1, 'Friend ID is required'),
+  amount: z.number().int().positive('Settlement amount must be positive').optional(),
+  note: z.string().trim().max(255).optional()
+});
+
+export type CreateSettlementInput = z.infer<typeof createSettlementSchema>;
+
+export const createTripSchema = z.object({
+  name: z.string().trim().min(1, 'Trip name is required').max(100, 'Trip name too long'),
+  description: z.string().trim().max(500, 'Description too long').optional().nullable()
+});
+
+export type CreateTripInput = z.infer<typeof createTripSchema>;
+
+export const updateTripSchema = z.object({
+  name: z.string().trim().min(1, 'Trip name is required').max(100, 'Trip name too long').optional(),
+  description: z.string().trim().max(500, 'Description too long').optional().nullable(),
+  isArchived: z.boolean().optional()
+});
+
+export type UpdateTripInput = z.infer<typeof updateTripSchema>;
+
+export const addTripMemberSchema = z.object({
+  email: z.string().trim().email('Invalid email address')
+});
+
+export type AddTripMemberInput = z.infer<typeof addTripMemberSchema>;
+
+export const joinTripSchema = z.object({
+  inviteCode: z.string().trim().min(3, 'Invalid invite code')
+});
+
+export type JoinTripInput = z.infer<typeof joinTripSchema>;
+
+export const recordTripSettlementSchema = z.object({
+  fromUserId: z.string().min(1, 'Payer is required'),
+  toUserId: z.string().min(1, 'Receiver is required'),
+  amount: z.number().int().positive('Amount must be greater than zero'),
+  note: z.string().trim().max(255).optional().nullable()
+});
+
+export type RecordTripSettlementInput = z.infer<typeof recordTripSettlementSchema>;
+

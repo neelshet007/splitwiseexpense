@@ -13,13 +13,29 @@ import { groupExpensesRouter, directExpensesRouter } from './modules/expenses/ex
 import { groupBalancesRouter, dashboardRouter } from './modules/balances/balances.routes';
 import telegramRouter from './modules/telegram/telegram.routes';
 import friendsRouter from './modules/friends/friends.routes';
+import tripsRouter from './modules/trips/trips.routes';
 
 export const app = express();
 
 // 1. Core Middlewares
 app.use(
   cors({
-    origin: [env.APP_URL, 'http://localhost:3000', 'http://127.0.0.1:3000'],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+
+      const normalizedAppUrl = env.APP_URL?.replace(/\/$/, '');
+      const allowed = [
+        normalizedAppUrl,
+        'http://localhost:3000',
+        'http://127.0.0.1:3000'
+      ];
+
+      if (allowed.includes(origin) || origin.endsWith('.vercel.app')) {
+        return callback(null, true);
+      }
+
+      callback(null, false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Telegram-Bot-Api-Secret-Token']
@@ -40,6 +56,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/friends', friendsRouter);
 app.use('/api/groups', groupsRouter);
+app.use('/api/trips', tripsRouter);
 app.use('/api/groups/:groupId/expenses', groupExpensesRouter);
 app.use('/api/groups/:groupId', groupBalancesRouter);
 app.use('/api/expenses', directExpensesRouter);

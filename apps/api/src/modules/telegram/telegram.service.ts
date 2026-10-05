@@ -4,17 +4,18 @@ import { env } from '../../config/env';
 import { logger } from '../../utils/logger';
 import { formatCurrency } from '../../utils/currency';
 import { NotFoundError, UnauthorizedError, ValidationError } from '../../utils/errors';
+import { UpdateNotificationPreferencesInput } from '@splitwise/validation';
 
 export class TelegramService {
   /**
-   * Generates a single-use deep link token for connecting a Telegram account.
+   * Generates a single-use deep link token for securely connecting a Telegram account.
    */
   static async generateConnectLink(userId: string): Promise<{ url: string; expiresAt: string }> {
     if (!env.TELEGRAM_BOT_USERNAME) {
       throw new ValidationError('Telegram bot username is not configured on the server.');
     }
 
-    // Invalidate existing tokens for this user
+    // Invalidate existing unused tokens for this user
     await prisma.telegramConnectToken.deleteMany({
       where: { userId }
     });
@@ -31,8 +32,35 @@ export class TelegramService {
       }
     });
 
-    const url = `https://t.me/${env.TELEGRAM_BOT_USERNAME}?start=${rawToken}`;
+    const cleanBotUsername = env.TELEGRAM_BOT_USERNAME.replace(/^@/, '');
+    const url = `https://t.me/${cleanBotUsername}?start=${rawToken}`;
     return { url, expiresAt: expiresAt.toISOString() };
+  }
+
+  /**
+   * Updates a user's Telegram username.
+   */
+  static async updateUsername(userId: string, username: string): Promise<void> {
+    const normalized = username.trim().startsWith('@') ? username.trim() : `@${username.trim()}`;
+    await prisma.user.update({
+      where: { id: userId },
+      data: { telegramUsername: normalized }
+    });
+  }
+
+  /**
+   * Updates a user's Telegram notification preferences.
+   */
+  static async updatePreferences(userId: string, input: UpdateNotificationPreferencesInput): Promise<void> {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(input.notifyExpenseAdded !== undefined ? { notifyExpenseAdded: input.notifyExpenseAdded } : {}),
+        ...(input.notifyMonthlySummary !== undefined ? { notifyMonthlySummary: input.notifyMonthlySummary } : {}),
+        ...(input.notifySettlements !== undefined ? { notifySettlements: input.notifySettlements } : {}),
+        ...(input.notifyPasswordReset !== undefined ? { notifyPasswordReset: input.notifyPasswordReset } : {})
+      }
+    });
   }
 
   /**
@@ -43,62 +71,77 @@ export class TelegramService {
       where: { id: userId },
       data: {
         telegramChatId: null,
-        telegramUsername: null,
-        telegramConnected: false
+        telegramConnected: false,
+        telegramConnectedAt: null
       }
     });
   }
 
   /**
-   * Sends an outbound text message to a specific Telegram chat ID.
+   * Sends an outbound HTML text message to a specific Telegram chat ID.
    */
   static async sendMessage(chatId: string, text: string): Promise<boolean> {
     if (!env.TELEGRAM_BOT_TOKEN) {
-      logger.info(`[TELEGRAM SIMULATOR] To ChatId: ${chatId}\n${text}`);
+      logger.debug('[TELEGRAM SIMULATOR] Outbound message simulated');
       return true;
     }
 
     try {
-      const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      let response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
           text,
-          parse_mode: 'HTML'
+          parse_mode: 'HTML',
+          disable_web_page_preview: false
         })
       });
 
+      // If Telegram rejects HTML entities (e.g. localhost URLs or special tags), retry cleanly as plain text
+      if (!response.ok && response.status === 400) {
+        const plainText = text.replace(/<[^>]*>/g, '');
+        response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: plainText,
+            disable_web_page_preview: false
+          })
+        });
+      }
+
       if (!response.ok) {
-        const errorData = await response.json();
-        logger.warn('Telegram sendMessage failed', { errorData, chatId });
+        logger.warn('Telegram notification delivery failed', { statusCode: response.status });
         return false;
       }
 
       return true;
     } catch (err) {
-      logger.error('Telegram network error during sendMessage', { error: (err as Error).message, chatId });
+      logger.error('Telegram network error during sendMessage', { error: (err as Error).message });
       return false;
     }
   }
 
   /**
    * Handles incoming webhook updates from Telegram Bot API.
+   * Processes /start <link-token> to safely associate chat_id with the authenticated account.
    */
-  static async handleWebhook(update: any, secretHeader?: string): Promise<void> {
-    // Verify secret token if configured
-    if (env.TELEGRAM_WEBHOOK_SECRET && secretHeader !== env.TELEGRAM_WEBHOOK_SECRET) {
+  static async handleWebhook(update: any, secretHeader?: string, isPolling = false): Promise<void> {
+    // Verify secret token if configured and coming from an external HTTP webhook
+    if (!isPolling && env.TELEGRAM_WEBHOOK_SECRET && secretHeader !== env.TELEGRAM_WEBHOOK_SECRET) {
       throw new UnauthorizedError('Invalid Telegram webhook secret token');
     }
 
     const message = update?.message;
     if (!message || !message.text) {
-      return; // Ignore non-message updates
+      return; // Ignore non-text updates
     }
 
     const text = message.text.trim();
     const chatId = String(message.chat.id);
-    const username = message.from?.username || null;
+    const senderUsername = message.from?.username ? `@${message.from.username}` : null;
 
     // Check for deep link command: /start <token>
     if (text.startsWith('/start')) {
@@ -106,7 +149,7 @@ export class TelegramService {
       if (parts.length < 2) {
         await this.sendMessage(
           chatId,
-          `👋 Welcome to <b>Splitwise Private</b>!\n\nTo link your account, please click the "Connect Telegram" button in your web app dashboard.`
+          `👋 Welcome to <b>Splitwise Private</b>!\n\nTo connect your account, please click the <b>Connect Telegram</b> button on your dashboard or profile.`
         );
         return;
       }
@@ -119,41 +162,62 @@ export class TelegramService {
         include: { user: true }
       });
 
-      if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
+      if (!tokenRecord || tokenRecord.usedAt !== null || tokenRecord.expiresAt < new Date()) {
         await this.sendMessage(
           chatId,
-          `⚠️ This connection link has expired or is invalid. Please generate a fresh link from the web app.`
+          `⚠️ This connection link has expired or has already been used. Please generate a fresh link from the app.`
         );
         return;
       }
 
-      // Associate Telegram Chat ID with the user
-      await prisma.user.update({
-        where: { id: tokenRecord.userId },
-        data: {
-          telegramChatId: chatId,
-          telegramUsername: username,
-          telegramConnected: true
-        }
+      // Check if this Telegram chat ID is already connected to another user
+      const existingUserWithChatId = await prisma.user.findUnique({
+        where: { telegramChatId: chatId }
       });
 
-      // Invalidate connection token
-      await prisma.telegramConnectToken.delete({
-        where: { id: tokenRecord.id }
-      });
+      if (existingUserWithChatId && existingUserWithChatId.id !== tokenRecord.userId) {
+        // Disconnect previous account
+        await prisma.user.update({
+          where: { id: existingUserWithChatId.id },
+          data: {
+            telegramChatId: null,
+            telegramConnected: false,
+            telegramConnectedAt: null
+          }
+        });
+      }
+
+      // Associate Telegram Chat ID with the user
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: tokenRecord.userId },
+          data: {
+            telegramChatId: chatId,
+            telegramUsername: senderUsername || tokenRecord.user.telegramUsername,
+            telegramConnected: true,
+            telegramConnectedAt: new Date()
+          }
+        }),
+        prisma.telegramConnectToken.update({
+          where: { id: tokenRecord.id },
+          data: { usedAt: new Date() }
+        })
+      ]);
 
       await this.sendMessage(
         chatId,
-        `🎉 <b>Success!</b> Your Telegram account has been linked to <b>${tokenRecord.user.name}</b>.\n\nYou will now receive instant expense notifications and monthly summaries here.`
+        `🎉 <b>Success!</b> Your Telegram account has been connected to <b>${tokenRecord.user.name}</b>.\n\nYou will now receive instant expense notifications, settlement updates, and monthly summaries directly here.`
       );
 
-      logger.info('Telegram account connected', { userId: tokenRecord.userId, chatId, username });
+      logger.info('Telegram account connected successfully', {
+        userId: tokenRecord.userId
+      });
     }
   }
 
   /**
    * Asynchronously dispatches expense notifications to all connected participants.
-   * Safe post-commit hook: Never rolls back transactions on failure.
+   * Safe post-commit hook: Never fails or rolls back transactions if delivery fails.
    */
   static async notifyExpenseAdded(expenseId: string): Promise<void> {
     try {
@@ -161,6 +225,7 @@ export class TelegramService {
         where: { id: expenseId },
         include: {
           group: true,
+          trip: true,
           payer: true,
           splits: {
             include: { user: true }
@@ -171,42 +236,63 @@ export class TelegramService {
       if (!expense) return;
 
       const formattedTotal = formatCurrency(expense.totalAmount);
+      const formattedDate = new Date(expense.expenseDate).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+      });
+      const isGroup = !!expense.group;
+      const isTrip = !!expense.trip;
+      const spaceHeader = isTrip
+        ? `🌴 <b>${expense.trip!.name}</b>\n\n`
+        : isGroup
+        ? `🏝️ <b>${expense.group!.name}</b>\n\n`
+        : '';
 
-      // 1. Notify Payer (if connected)
-      if (expense.payer.telegramConnected && expense.payer.telegramChatId) {
+      // 1. Notify Payer (if connected and preference is ON)
+      if (
+        expense.payer.telegramConnected &&
+        expense.payer.telegramChatId &&
+        expense.payer.notifyExpenseAdded !== false
+      ) {
         const payerSplit = expense.splits.find((s) => s.userId === expense.paidBy);
         const payerShare = payerSplit ? payerSplit.amountOwed : 0;
-        const owedToPayer = expense.totalAmount - payerShare;
 
-        const groupLabel = expense.group ? `Group: <i>${expense.group.name}</i>` : `<i>Direct Friend Expense</i>`;
+        // Build list of who owes payer from this expense
+        const debtors = expense.splits
+          .filter((s) => s.userId !== expense.paidBy && s.amountOwed > 0)
+          .map((s) => `${s.user.name} owes you: ${formatCurrency(s.amountOwed)}`);
 
+        const debtorLines = debtors.length > 0 ? debtors.join('\n') : 'All settled in bill';
         const payerMsg = [
-          `💸 <b>Expense Added</b>\n`,
-          `<b>${expense.description}</b>\n`,
+          `${spaceHeader}💸 <b>Expense Added</b>\n`,
+          `<b>${expense.description}</b>`,
+          `📅 Date: ${formattedDate}`,
+          `Total: ${formattedTotal}`,
           `You paid: ${formattedTotal}`,
-          `Your share: ${formatCurrency(payerShare)}`,
-          `You are owed: ${formatCurrency(owedToPayer)}\n`,
-          groupLabel
+          `Your share: ${formatCurrency(payerShare)}\n`,
+          debtorLines
         ].join('\n');
 
         await this.sendMessage(expense.payer.telegramChatId, payerMsg);
       }
 
-      // 2. Notify other participants (if connected)
+      // 2. Notify other participants (if connected and preference is ON)
       for (const split of expense.splits) {
-        if (split.userId === expense.paidBy) continue; // Payer already handled
+        if (split.userId === expense.paidBy) continue; // Payer already notified
 
         const user = split.user;
-        if (user.telegramConnected && user.telegramChatId) {
-          const groupLabel = expense.group ? `Group: <i>${expense.group.name}</i>` : `<i>Direct Friend Expense</i>`;
+        if (user.telegramConnected && user.telegramChatId && user.notifyExpenseAdded !== false) {
+          const formattedShare = formatCurrency(split.amountOwed);
 
           const participantMsg = [
-            `💸 <b>New Expense</b>\n`,
-            `<b>${expense.description}</b>\n`,
+            `${spaceHeader}💸 <b>New Expense</b>\n`,
+            `<b>${expense.description}</b>`,
+            `📅 Date: ${formattedDate}`,
             `Total: ${formattedTotal}`,
-            `Paid by: ${expense.payer.name}`,
-            `Your share: ${formatCurrency(split.amountOwed)}\n`,
-            groupLabel
+            `Paid by: ${expense.payer.name}\n`,
+            `Your share: ${formattedShare}`,
+            `You owe ${expense.payer.name}: ${formattedShare}`
           ].join('\n');
 
           await this.sendMessage(user.telegramChatId, participantMsg);
@@ -218,5 +304,76 @@ export class TelegramService {
         error: (err as Error).message
       });
     }
+  }
+
+  /**
+   * Asynchronously dispatches settlement notification to both parties.
+   */
+  static async notifySettlement(settlementId: string): Promise<void> {
+    try {
+      const settlement = await prisma.settlement.findUnique({
+        where: { id: settlementId },
+        include: {
+          fromUser: true,
+          toUser: true
+        }
+      });
+
+      if (!settlement) return;
+
+      const formattedAmount = formatCurrency(settlement.amount);
+      const noteLine = settlement.note ? `\nNote: <i>${settlement.note}</i>` : '';
+
+      // 1. Notify Payer (fromUser)
+      if (
+        settlement.fromUser.telegramConnected &&
+        settlement.fromUser.telegramChatId &&
+        settlement.fromUser.notifySettlements !== false
+      ) {
+        const msg = [
+          `🤝 <b>Settlement Recorded</b>\n`,
+          `You paid <b>${settlement.toUser.name}</b> ${formattedAmount}.${noteLine}`
+        ].join('\n');
+
+        await this.sendMessage(settlement.fromUser.telegramChatId, msg);
+      }
+
+      // 2. Notify Receiver (toUser)
+      if (
+        settlement.toUser.telegramConnected &&
+        settlement.toUser.telegramChatId &&
+        settlement.toUser.notifySettlements !== false
+      ) {
+        const msg = [
+          `🤝 <b>Settlement Received</b>\n`,
+          `<b>${settlement.fromUser.name}</b> paid you ${formattedAmount}.${noteLine}`
+        ].join('\n');
+
+        await this.sendMessage(settlement.toUser.telegramChatId, msg);
+      }
+    } catch (err) {
+      logger.error('Failed to dispatch settlement Telegram notifications', {
+        settlementId,
+        error: (err as Error).message
+      });
+    }
+  }
+
+  /**
+   * Dispatches password reset notification via Telegram.
+   */
+  static async sendPasswordReset(user: { id: string; name: string; telegramChatId: string }, rawToken: string): Promise<boolean> {
+    const resetUrl = `${env.APP_URL}/reset-password?token=${rawToken}`;
+
+    const message = [
+      `🔐 <b>Password Reset</b>\n`,
+      `A password reset was requested for your account.\n`,
+      `This link expires in 15 minutes.\n`,
+      `🔗 <b>Reset Link:</b>`,
+      `${resetUrl}\n`,
+      `If you did not request this, you can safely ignore this message.`
+    ].join('\n');
+
+    return this.sendMessage(user.telegramChatId, message);
   }
 }

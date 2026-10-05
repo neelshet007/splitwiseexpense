@@ -122,17 +122,20 @@ export default function FriendsPage() {
               return (
                 <div
                   key={item.id}
-                  className="p-4 rounded-2xl bg-white dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-800 hover:border-slate-300 transition-all flex items-center justify-between"
+                  className="p-4 rounded-2xl bg-white dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-all flex items-center justify-between group"
                 >
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-11 h-11 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold flex items-center justify-center text-base border border-slate-200/60 dark:border-slate-700">
+                  <Link
+                    href={`/friends/${item.friendId}`}
+                    className="flex items-center gap-3.5 flex-1 min-w-0"
+                  >
+                    <div className="w-11 h-11 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold flex items-center justify-center text-base border border-slate-200/60 dark:border-slate-700 group-hover:scale-105 transition-transform flex-shrink-0">
                       {item.friend.name.charAt(0)}
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                         {item.friend.name}
                       </h3>
-                      <p className="text-[11px] text-slate-400">{item.friend.email}</p>
+                      <p className="text-[11px] text-slate-400 truncate">{item.friend.email}</p>
 
                       <div className="mt-1">
                         {owesYou ? (
@@ -150,15 +153,23 @@ export default function FriendsPage() {
                         )}
                       </div>
                     </div>
-                  </div>
-
-                  <Link
-                    href={`/expenses/new?friendId=${item.friendId}`}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold transition-colors active:scale-95"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Split</span>
                   </Link>
+
+                  <div className="flex items-center gap-2 pl-2 flex-shrink-0">
+                    <Link
+                      href={`/friends/${item.friendId}`}
+                      className="px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white font-semibold hidden sm:inline-block"
+                    >
+                      View
+                    </Link>
+                    <Link
+                      href={`/expenses/new?friendId=${item.friendId}`}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold transition-colors active:scale-95"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Split</span>
+                    </Link>
+                  </div>
                 </div>
               );
             })}
@@ -206,7 +217,7 @@ export default function FriendsPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="e.g. liam@example.com"
+                  placeholder="friend@example.com"
                   autoFocus
                   required
                   className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"

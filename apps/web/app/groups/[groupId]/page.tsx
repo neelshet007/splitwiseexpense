@@ -93,10 +93,8 @@ export default function GroupDetailPage() {
       try {
         await navigator.share(shareData);
         return;
-      } catch (err: any) {
-        if (err.name !== 'AbortError') {
-          console.error('Error sharing:', err);
-        }
+      } catch {
+        // User cancelled share or Web Share API unsupported
       }
     }
 
@@ -482,7 +480,7 @@ export default function GroupDetailPage() {
                   type="email"
                   value={memberEmail}
                   onChange={(e) => setMemberEmail(e.target.value)}
-                  placeholder="lucas@example.com"
+                  placeholder="friend@example.com"
                   required
                   className="flex-1 px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />

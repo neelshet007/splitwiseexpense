@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: splitwise-api
+    runtime: node
+    plan: free
+    buildCommand: pnpm install --frozen-lockfile && pnpm db:generate && pnpm db:push && pnpm build:api
+    startCommand: pnpm start:api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        generateValue: true
+      - key: TIMEZONE
+        value: Asia/Kolkata
+      - key: MONTHLY_SUMMARY_CRON
+        value: "0 0 1 * *"

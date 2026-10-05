@@ -163,11 +163,11 @@ export default function LandingPage() {
             <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800/60">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-full bg-slate-900 dark:bg-emerald-500 text-white font-bold flex items-center justify-center text-xs">
-                  A
+                  ₹
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">Good evening, Alex 👋</h4>
-                  <p className="text-[10px] text-slate-400">October Overview</p>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">Active Dashboard 👋</h4>
+                  <p className="text-[10px] text-slate-400">Monthly Balances Overview</p>
                 </div>
               </div>
               <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold rounded-full">
@@ -179,12 +179,12 @@ export default function LandingPage() {
             <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800/80 mb-3">
               <div className="flex items-center justify-between text-xs font-bold mb-1">
                 <span className="flex items-center gap-1.5 text-slate-900 dark:text-white">
-                  <span>🍕 Dinner with Lucas</span>
+                  <span>🍕 Direct Dinner Outing</span>
                 </span>
                 <span className="text-emerald-600 dark:text-emerald-400">+₹600</span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                You paid ₹1,200 • Lucas owes you ₹600 (50/50 split)
+                You paid ₹1,200 • ₹600 friend share (50/50 split)
               </p>
             </div>
 
@@ -195,7 +195,7 @@ export default function LandingPage() {
                 <span className="text-slate-900 dark:text-white">₹18,720 total</span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Lucas & Noah owe you ₹1,500 total
+                2 members owe you ₹1,500 total
               </p>
             </div>
           </div>
@@ -268,7 +268,7 @@ export default function LandingPage() {
                 Going out with one friend? No need to create a whole group. Split dinner, coffee, or a cab directly.
               </p>
               <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl text-xs text-slate-700 dark:text-slate-300 font-medium">
-                ☕ <b>Coffee with Liam</b>: You paid ₹240 → Liam owes you ₹120.
+                ☕ <b>Direct Coffee Expense</b>: You paid ₹240 → ₹120 share tracked automatically.
               </div>
             </div>
 

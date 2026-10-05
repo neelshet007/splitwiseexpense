@@ -8,19 +8,26 @@ generator client {
 }
 
 model User {
-  id                 String    @id @default(cuid())
-  email              String    @unique
-  name               String
-  passwordHash       String
-  telegramChatId     String?   @unique
-  telegramUsername   String?
-  telegramConnected  Boolean   @default(false)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  email                String    @unique
+  name                 String
+  passwordHash         String
+  telegramChatId       String?   @unique
+  telegramUsername     String?
+  telegramConnected    Boolean   @default(false)
+  telegramConnectedAt  DateTime?
+  notifyExpenseAdded   Boolean   @default(true)
+  notifyMonthlySummary Boolean   @default(true)
+  notifySettlements    Boolean   @default(true)
+  notifyPasswordReset  Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   // Relationships
   groupMemberships     GroupMember[]
   createdGroups        Group[]                 @relation("GroupCreator")
+  createdTrips         Trip[]                  @relation("TripCreator")
+  tripMemberships      TripMember[]            @relation("TripMemberships")
   expensesPaid         Expense[]               @relation("ExpensePayer")
   expensesCreated      Expense[]               @relation("ExpenseCreator")
   expenseSplits        ExpenseSplit[]
@@ -28,6 +35,11 @@ model User {
   telegramTokens       TelegramConnectToken[]
   friendshipsRequested Friendship[]            @relation("FriendshipRequester")
   friendshipsReceived  Friendship[]            @relation("FriendshipReceiver")
+  settlementsPaid      Settlement[]            @relation("SettlementPayer")
+  settlementsReceived  Settlement[]            @relation("SettlementReceiver")
+  tripSettlementsPaid  TripSettlement[]        @relation("TripSettlementPayer")
+  tripSettlementsReceived TripSettlement[]     @relation("TripSettlementReceiver")
+  notificationLogs     NotificationLog[]
 
   @@index([email])
 }
@@ -61,15 +73,30 @@ model PasswordReset {
 }
 
 model TelegramConnectToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
   @@index([userId])
   @@index([tokenHash])
+}
+
+model NotificationLog {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String    // MONTHLY_SUMMARY | EXPENSE_ADDED | SETTLEMENT | PASSWORD_RESET
+  period    String?   // e.g. "2026-10"
+  status    String    // PENDING | SENT | FAILED
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, type, period])
+  @@index([userId])
 }
 
 model Group {
@@ -104,11 +131,13 @@ model GroupMember {
 
 model Expense {
   id          String         @id @default(cuid())
-  groupId     String?        // Nullable: null indicates direct 1-to-1 friend expense
+  groupId     String?        // Nullable: null indicates direct 1-to-1 friend expense or trip expense
   group       Group?         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  tripId      String?        // Nullable: set if this expense belongs to a Trip
+  trip        Trip?          @relation(fields: [tripId], references: [id], onDelete: Cascade)
   description String
   totalAmount Int            // Integer minor units (e.g., paise/cents: 120000 = ₹1,200.00)
-  splitType   String         @default("EQUAL") // EQUAL | EXACT | PERCENTAGE
+  splitType   String         @default("EQUAL") // EQUAL | EXACT | PERCENTAGE | FULL_AMOUNT
   paidBy      String
   payer       User           @relation("ExpensePayer", fields: [paidBy], references: [id], onDelete: Restrict)
   createdBy   String
@@ -120,8 +149,10 @@ model Expense {
   splits      ExpenseSplit[]
 
   @@index([groupId, expenseDate(sort: Desc)])
+  @@index([tripId, expenseDate(sort: Desc)])
   @@index([paidBy])
   @@index([groupId])
+  @@index([tripId])
   @@index([createdBy])
 }
 
@@ -148,3 +179,75 @@ model MonthlySummaryLog {
   @@unique([groupId, yearMonth])
   @@index([groupId])
 }
+
+model Settlement {
+  id         String   @id @default(cuid())
+  fromUserId String
+  fromUser   User     @relation("SettlementPayer", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUserId   String
+  toUser     User     @relation("SettlementReceiver", fields: [toUserId], references: [id], onDelete: Cascade)
+  amount     Int      // Integer minor units (paise/cents)
+  settledAt  DateTime @default(now())
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([settledAt(sort: Desc)])
+}
+
+model Trip {
+  id          String           @id @default(cuid())
+  name        String
+  description String?
+  inviteCode  String           @unique
+  isArchived  Boolean          @default(false)
+  createdBy   String
+  creator     User             @relation("TripCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  members     TripMember[]
+  expenses    Expense[]
+  settlements TripSettlement[]
+
+  @@index([createdBy])
+  @@index([inviteCode])
+}
+
+model TripMember {
+  id        String   @id @default(cuid())
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("TripMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  role      String   @default("MEMBER") // ADMIN | MEMBER
+  joinedAt  DateTime @default(now())
+
+  @@unique([tripId, userId])
+  @@index([tripId])
+  @@index([userId])
+}
+
+model TripSettlement {
+  id         String   @id @default(cuid())
+  tripId     String
+  trip       Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  fromUserId String
+  fromUser   User     @relation("TripSettlementPayer", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUserId   String
+  toUser     User     @relation("TripSettlementReceiver", fields: [toUserId], references: [id], onDelete: Cascade)
+  amount     Int      // Integer minor units (paise/cents)
+  settledAt  DateTime @default(now())
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tripId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([settledAt(sort: Desc)])
+}
+
+

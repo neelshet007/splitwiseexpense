@@ -2,16 +2,29 @@ import { Request, Response, NextFunction } from 'express';
 import { TelegramService } from './telegram.service';
 import { AuthenticatedRequest } from '../../middleware/auth.middleware';
 import { env } from '../../config/env';
+import { updateTelegramUsernameSchema, updateNotificationPreferencesSchema } from '@splitwise/validation';
+import { prisma } from '@splitwise/database';
 
 export class TelegramController {
   static async getStatus(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
+      const user = await prisma.user.findUnique({
+        where: { id: req.user!.id }
+      });
+
       return res.status(200).json({
         success: true,
         data: {
-          connected: req.user!.telegramConnected,
-          telegramUsername: req.user!.telegramUsername,
-          botUsername: env.TELEGRAM_BOT_USERNAME || undefined
+          connected: user?.telegramConnected ?? false,
+          telegramUsername: user?.telegramUsername ?? null,
+          telegramConnectedAt: user?.telegramConnectedAt?.toISOString() ?? null,
+          botUsername: env.TELEGRAM_BOT_USERNAME || undefined,
+          preferences: {
+            notifyExpenseAdded: user?.notifyExpenseAdded ?? true,
+            notifyMonthlySummary: user?.notifyMonthlySummary ?? true,
+            notifySettlements: user?.notifySettlements ?? true,
+            notifyPasswordReset: user?.notifyPasswordReset ?? true
+          }
         }
       });
     } catch (error) {
@@ -37,6 +50,32 @@ export class TelegramController {
       return res.status(200).json({
         success: true,
         message: 'Telegram disconnected successfully'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateUsername(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const validated = updateTelegramUsernameSchema.parse(req.body);
+      await TelegramService.updateUsername(req.user!.id, validated.telegramUsername);
+      return res.status(200).json({
+        success: true,
+        message: 'Telegram username updated successfully'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updatePreferences(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const validated = updateNotificationPreferencesSchema.parse(req.body);
+      await TelegramService.updatePreferences(req.user!.id, validated);
+      return res.status(200).json({
+        success: true,
+        message: 'Notification preferences updated successfully'
       });
     } catch (error) {
       next(error);

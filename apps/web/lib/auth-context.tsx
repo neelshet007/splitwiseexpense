@@ -10,7 +10,7 @@ interface AuthContextType {
   user: SafeUser | null;
   isLoading: boolean;
   login: (data: LoginInput) => Promise<void>;
-  register: (data: RegisterInput) => Promise<void>;
+  register: (data: RegisterInput, redirect?: boolean) => Promise<SafeUser>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -46,13 +46,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push('/dashboard');
   };
 
-  const register = async (data: RegisterInput) => {
+  const register = async (data: RegisterInput, redirect: boolean = true) => {
     const res = await apiFetch<{ user: SafeUser }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(data)
     });
     setUser(res.user);
-    router.push('/dashboard');
+    if (redirect) {
+      router.push('/dashboard');
+    }
+    return res.user;
   };
 
   const logout = async () => {

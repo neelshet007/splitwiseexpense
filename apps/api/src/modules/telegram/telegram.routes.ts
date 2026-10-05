@@ -11,5 +11,7 @@ router.post('/webhook', TelegramController.handleWebhook);
 router.get('/status', requireAuth, TelegramController.getStatus);
 router.post('/connect', requireAuth, TelegramController.connect);
 router.delete('/disconnect', requireAuth, TelegramController.disconnect);
+router.patch('/username', requireAuth, TelegramController.updateUsername);
+router.patch('/preferences', requireAuth, TelegramController.updatePreferences);
 
 export default router;

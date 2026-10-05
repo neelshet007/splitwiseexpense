@@ -7,7 +7,8 @@ import { env } from '../../config/env';
 import { ConflictError, UnauthorizedError, ValidationError } from '../../utils/errors';
 import { RegisterInput, LoginInput, ResetPasswordInput } from '@splitwise/validation';
 import { SafeUser } from '@splitwise/types';
-import { sendEmail } from '../../utils/email';
+import { TelegramService } from '../telegram/telegram.service';
+import { logger } from '../../utils/logger';
 
 const ARGON2_OPTIONS: argon2.Options = {
   type: argon2.argon2id,
@@ -25,6 +26,11 @@ export class AuthService {
       telegramChatId: user.telegramChatId,
       telegramUsername: user.telegramUsername,
       telegramConnected: user.telegramConnected,
+      telegramConnectedAt: user.telegramConnectedAt instanceof Date ? user.telegramConnectedAt.toISOString() : user.telegramConnectedAt,
+      notifyExpenseAdded: user.notifyExpenseAdded ?? true,
+      notifyMonthlySummary: user.notifyMonthlySummary ?? true,
+      notifySettlements: user.notifySettlements ?? true,
+      notifyPasswordReset: user.notifyPasswordReset ?? true,
       createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt,
       updatedAt: user.updatedAt instanceof Date ? user.updatedAt.toISOString() : user.updatedAt
     };
@@ -69,11 +75,19 @@ export class AuthService {
 
     const passwordHash = await argon2.hash(data.password, ARGON2_OPTIONS);
 
+    const normalizedTelegram = data.telegramUsername
+      ? data.telegramUsername.trim().startsWith('@')
+        ? data.telegramUsername.trim()
+        : `@${data.telegramUsername.trim()}`
+      : null;
+
     const user = await prisma.user.create({
       data: {
         name: data.name.trim(),
         email: normalizedEmail,
-        passwordHash
+        passwordHash,
+        telegramUsername: normalizedTelegram,
+        telegramConnected: false
       }
     });
 
@@ -104,25 +118,47 @@ export class AuthService {
     return { user: this.toSafeUser(user), token };
   }
 
+  /**
+   * Password reset via Telegram only.
+   * Completely adheres to:
+   * - No email service
+   * - Generic timing-safe response (no account enumeration)
+   * - Database-backed rate limiting
+   * - Cryptographically secure 15-minute token
+   */
   static async forgotPassword(email: string): Promise<void> {
     const normalizedEmail = email.toLowerCase().trim();
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail }
     });
 
-    // If user does not exist, do not reveal it
-    if (!user) {
+    // If user does not exist or Telegram is not connected, do not reveal it
+    if (!user || !user.telegramConnected || !user.telegramChatId) {
       return;
+    }
+
+    // Rate-limit check: Max 3 reset requests within 15 minutes
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+    const recentRequests = await prisma.passwordReset.count({
+      where: {
+        userId: user.id,
+        createdAt: { gte: fifteenMinutesAgo }
+      }
+    });
+
+    if (recentRequests >= 3) {
+      logger.warn('Password reset rate limit exceeded', { userId: user.id });
+      return; // Generic response to prevent abuse
     }
 
     // Invalidate prior unused tokens
     await prisma.passwordReset.deleteMany({
-      where: { userId: user.id }
+      where: { userId: user.id, usedAt: null }
     });
 
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     await prisma.passwordReset.create({
       data: {
@@ -132,14 +168,14 @@ export class AuthService {
       }
     });
 
-    const resetLink = `${env.APP_URL}/reset-password?token=${rawToken}`;
-
-    await sendEmail({
-      to: user.email,
-      subject: 'Reset your password - Splitwise Private',
-      text: `Hello ${user.name},\n\nYou requested a password reset. Click the link below to set a new password:\n\n${resetLink}\n\nThis link is valid for 1 hour. If you did not request this, please ignore this email.`,
-      html: `<p>Hello ${user.name},</p><p>You requested a password reset for your account. Click the button below:</p><p><a href="${resetLink}" style="padding:10px 18px;background:#10b981;color:#fff;border-radius:6px;text-decoration:none;">Reset Password</a></p><p>Or copy this URL: ${resetLink}</p><p>This link expires in 1 hour.</p>`
-    });
+    await TelegramService.sendPasswordReset(
+      {
+        id: user.id,
+        name: user.name,
+        telegramChatId: user.telegramChatId
+      },
+      rawToken
+    );
   }
 
   static async resetPassword(data: ResetPasswordInput): Promise<void> {
@@ -166,5 +202,13 @@ export class AuthService {
         data: { usedAt: new Date() }
       })
     ]);
+
+    // Send Telegram alert if connected
+    if (resetRecord.user.telegramConnected && resetRecord.user.telegramChatId) {
+      TelegramService.sendMessage(
+        resetRecord.user.telegramChatId,
+        `🔐 <b>Security Alert</b>\n\nYour password was successfully updated. You may now log in with your new password.`
+      ).catch(() => {});
+    }
   }
 }

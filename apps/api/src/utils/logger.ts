@@ -4,7 +4,25 @@ function sanitize(obj: any): any {
   if (!obj || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(sanitize);
 
-  const sensitiveKeys = ['password', 'confirmpassword', 'token', 'tokenhash', 'secret', 'authorization', 'cookie', 'set-cookie'];
+  const sensitiveKeys = [
+    'password',
+    'confirmpassword',
+    'passwordhash',
+    'token',
+    'tokenhash',
+    'secret',
+    'authorization',
+    'cookie',
+    'set-cookie',
+    'refreshtoken',
+    'accesstoken',
+    'chatid',
+    'chat_id',
+    'telegramchatid',
+    'bottoken',
+    'apikey',
+    'secretkey'
+  ];
   const sanitized: Record<string, any> = {};
 
   for (const [key, value] of Object.entries(obj)) {
@@ -21,6 +39,9 @@ function sanitize(obj: any): any {
 }
 
 function log(level: LogLevel, message: string, meta?: any) {
+  if (process.env.NODE_ENV === 'test') return;
+  if (level === 'debug' && process.env.NODE_ENV === 'production') return;
+
   const timestamp = new Date().toISOString();
   const payload = {
     timestamp,
@@ -28,8 +49,6 @@ function log(level: LogLevel, message: string, meta?: any) {
     message,
     ...(meta ? { meta: sanitize(meta) } : {})
   };
-
-  if (process.env.NODE_ENV === 'test') return;
 
   const output = JSON.stringify(payload);
   if (level === 'error') {

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { GroupItem, FriendItem, SplitType } from '@splitwise/types';
+import { GroupItem, FriendItem, TripItem, SplitType } from '@splitwise/types';
 import { AppShell } from '@/components/layout/AppShell';
 import { formatMinorCurrency } from '@/lib/utils';
 import {
@@ -16,36 +16,62 @@ import {
   Loader2,
   User,
   Users,
+  Compass,
+  Palmtree,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Calendar
 } from 'lucide-react';
 
 function AddExpenseForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const initialTripId = searchParams.get('tripId') || '';
   const initialGroupId = searchParams.get('groupId') || '';
   const initialFriendId = searchParams.get('friendId') || '';
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  // Mode: 'FRIEND' (1-to-1 direct) or 'GROUP'
-  const [splitMode, setSplitMode] = useState<'FRIEND' | 'GROUP'>(
-    initialGroupId ? 'GROUP' : initialFriendId ? 'FRIEND' : 'FRIEND'
+  // Mode: 'TRIP' | 'GROUP' | 'FRIEND'
+  const [splitMode, setSplitMode] = useState<'TRIP' | 'GROUP' | 'FRIEND'>(
+    initialTripId ? 'TRIP' : initialGroupId ? 'GROUP' : initialFriendId ? 'FRIEND' : 'TRIP'
   );
 
   // Common inputs
+  const getTodayString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const [description, setDescription] = useState('');
   const [amountStr, setAmountStr] = useState('');
+  const [expenseDate, setExpenseDate] = useState(getTodayString);
   const [paidBy, setPaidBy] = useState('');
   const [splitType, setSplitType] = useState<SplitType>('EQUAL');
   const [fullAmountSubMode, setFullAmountSubMode] = useState<'EQUAL' | 'PERCENTAGE' | 'CUSTOM'>('EQUAL');
   const [serverError, setServerError] = useState<string | null>(null);
 
+  const setQuickDate = (daysAgo: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    setExpenseDate(`${year}-${month}-${day}`);
+  };
+
   // 1-to-1 Friend Mode state
   const [selectedFriendId, setSelectedFriendId] = useState(initialFriendId);
 
+  // Trip Mode state
+  const [selectedTripId, setSelectedTripId] = useState(initialTripId);
+
   // Group Mode state
   const [selectedGroupId, setSelectedGroupId] = useState(initialGroupId);
+
   const [selectedMembers, setSelectedMembers] = useState<Record<string, boolean>>({});
   const [exactAmounts, setExactAmounts] = useState<Record<string, string>>({});
   const [percentages, setPercentages] = useState<Record<string, string>>({});
@@ -62,6 +88,12 @@ function AddExpenseForm() {
     queryFn: () => apiFetch<GroupItem[]>('/api/groups')
   });
 
+  // 3. Fetch Trips
+  const { data: trips, isLoading: tripsLoading } = useQuery<TripItem[]>({
+    queryKey: ['trips'],
+    queryFn: () => apiFetch<TripItem[]>('/api/trips')
+  });
+
   // Auto-select first friend if available
   useEffect(() => {
     if (friends && friends.length > 0 && !selectedFriendId) {
@@ -69,22 +101,37 @@ function AddExpenseForm() {
     }
   }, [friends, selectedFriendId]);
 
-  // Active selected group
+  // Active selected trip / group
+  const activeTrip = trips?.find((t) => t.id === selectedTripId) || trips?.[0];
   const activeGroup = groups?.find((g) => g.id === selectedGroupId) || groups?.[0];
 
+  const isCollective = splitMode === 'TRIP' || splitMode === 'GROUP';
+  const activeCollective = splitMode === 'TRIP' ? activeTrip : activeGroup;
+  const collectiveMembers = (activeCollective?.members || []).map((m: any) => ({
+    userId: m.userId,
+    user: m.user
+  }));
+
+  // Sync collective selected members
   useEffect(() => {
-    if (activeGroup) {
+    if (splitMode === 'TRIP' && activeTrip) {
+      if (!selectedTripId) setSelectedTripId(activeTrip.id);
+      if (!paidBy && user) setPaidBy(user.id);
+      const initialSelected: Record<string, boolean> = {};
+      (activeTrip.members || []).forEach((m) => {
+        initialSelected[m.userId] = true;
+      });
+      setSelectedMembers(initialSelected);
+    } else if (splitMode === 'GROUP' && activeGroup) {
       if (!selectedGroupId) setSelectedGroupId(activeGroup.id);
       if (!paidBy && user) setPaidBy(user.id);
-
-      // Select all members by default
       const initialSelected: Record<string, boolean> = {};
       (activeGroup.members || []).forEach((m) => {
         initialSelected[m.userId] = true;
       });
       setSelectedMembers(initialSelected);
     }
-  }, [activeGroup, paidBy, user, selectedGroupId]);
+  }, [splitMode, activeTrip, activeGroup, paidBy, user, selectedTripId, selectedGroupId]);
 
   // Selected friend object & amount in minor units
   const activeFriend = friends?.find((f) => f.friendId === selectedFriendId);
@@ -98,17 +145,17 @@ function AddExpenseForm() {
       ? 'You'
       : splitMode === 'FRIEND'
       ? activeFriend?.friend.name || 'Friend'
-      : activeGroup?.members?.find((m) => m.userId === effectivePayerId)?.user?.name || 'Member';
+      : collectiveMembers.find((m) => m.userId === effectivePayerId)?.user?.name || 'Member';
 
-  // In Full Amount group mode, adjust selection so payer is not in debtors by default
+  // In Full Amount collective mode, adjust selection so payer is not in debtors by default
   useEffect(() => {
-    if (splitType === 'FULL_AMOUNT' && splitMode === 'GROUP' && activeGroup) {
+    if (splitType === 'FULL_AMOUNT' && isCollective && activeCollective) {
       setSelectedMembers((prev) => {
         const next = { ...prev };
         if (effectivePayerId) {
           next[effectivePayerId] = false;
         }
-        const otherMembers = (activeGroup.members || []).filter((m) => m.userId !== effectivePayerId);
+        const otherMembers = collectiveMembers.filter((m) => m.userId !== effectivePayerId);
         const anySelected = otherMembers.some((m) => next[m.userId]);
         if (!anySelected) {
           otherMembers.forEach((m) => {
@@ -118,7 +165,7 @@ function AddExpenseForm() {
         return next;
       });
     }
-  }, [splitType, splitMode, activeGroup, effectivePayerId]);
+  }, [splitType, isCollective, activeCollective, effectivePayerId]);
 
   // Helper to initialize or sync custom amounts & percentages
   useEffect(() => {
@@ -137,7 +184,7 @@ function AddExpenseForm() {
             [activeFriend.friendId]: '50'
           });
         }
-      } else if (splitMode === 'GROUP' && activeGroup) {
+      } else if (isCollective && activeCollective) {
         const targetIds =
           splitType === 'FULL_AMOUNT'
             ? Object.keys(selectedMembers).filter((id) => selectedMembers[id] && id !== effectivePayerId)
@@ -163,7 +210,7 @@ function AddExpenseForm() {
         }
       }
     }
-  }, [totalAmountMinor, splitMode, activeFriend, user, activeGroup, selectedMembers, splitType, effectivePayerId]);
+  }, [totalAmountMinor, splitMode, isCollective, activeFriend, user, activeCollective, selectedMembers, splitType, effectivePayerId]);
 
   // Calculate Splits
   let calculatedSplits: { userId: string; name: string; amountOwed: number; pct?: number }[] = [];
@@ -240,7 +287,7 @@ function AddExpenseForm() {
         }
       ];
     }
-  } else if (splitMode === 'GROUP' && activeGroup && totalAmountMinor > 0) {
+  } else if (isCollective && activeCollective && totalAmountMinor > 0) {
     const activeParticipantIds = Object.keys(selectedMembers).filter((id) => selectedMembers[id]);
 
     if (splitType === 'FULL_AMOUNT') {
@@ -250,7 +297,7 @@ function AddExpenseForm() {
         validationError = `Please select at least one person who owes this expense to ${payerName}.`;
       } else if (owedMemberIds.length === 1) {
         const singleDebtorId = owedMemberIds[0];
-        const member = (activeGroup.members || []).find((m) => m.userId === singleDebtorId);
+        const member = collectiveMembers.find((m) => m.userId === singleDebtorId);
         calculatedSplits = [
           {
             userId: effectivePayerId,
@@ -272,7 +319,7 @@ function AddExpenseForm() {
           const remainder = totalAmountMinor % count;
 
           const debtorSplits = owedMemberIds.map((id, index) => {
-            const member = (activeGroup.members || []).find((m) => m.userId === id);
+            const member = collectiveMembers.find((m) => m.userId === id);
             return {
               userId: id,
               name: member?.user.name || 'Member',
@@ -288,7 +335,7 @@ function AddExpenseForm() {
         } else if (fullAmountSubMode === 'CUSTOM') {
           let sumMinor = 0;
           const debtorSplits = owedMemberIds.map((id) => {
-            const member = (activeGroup.members || []).find((m) => m.userId === id);
+            const member = collectiveMembers.find((m) => m.userId === id);
             const val = Math.round((parseFloat(exactAmounts[id] || '0') || 0) * 100);
             sumMinor += val;
             return {
@@ -317,7 +364,7 @@ function AddExpenseForm() {
           let maxVal = -1;
 
           const debtorSplits = owedMemberIds.map((id, idx) => {
-            const member = (activeGroup.members || []).find((m) => m.userId === id);
+            const member = collectiveMembers.find((m) => m.userId === id);
             const pct = parseFloat(percentages[id] || '0') || 0;
             sumPct += pct;
             if (pct > maxVal) {
@@ -339,26 +386,26 @@ function AddExpenseForm() {
             debtorSplits[maxIdx].amountOwed += disc;
           }
 
-          if (Math.abs(sumPct - 100) > 0.01) {
-            validationError = `Percentages sum to ${sumPct.toFixed(1)}% (must equal 100%)`;
-          }
-
           calculatedSplits = [
             { userId: effectivePayerId, name: payerName, amountOwed: 0, pct: 0 },
             ...debtorSplits
           ];
+
+          if (Math.abs(sumPct - 100) > 0.01) {
+            validationError = `Percentages sum to ${sumPct.toFixed(1)}% (must equal 100%)`;
+          }
         }
       }
     } else {
       if (activeParticipantIds.length === 0) {
-        validationError = 'Please select at least one group member.';
+        validationError = 'Please select at least one member to share this expense.';
       } else if (splitType === 'EQUAL') {
         const count = activeParticipantIds.length;
         const base = Math.floor(totalAmountMinor / count);
         const remainder = totalAmountMinor % count;
 
         calculatedSplits = activeParticipantIds.map((id, index) => {
-          const member = (activeGroup.members || []).find((m) => m.userId === id);
+          const member = collectiveMembers.find((m) => m.userId === id);
           return {
             userId: id,
             name: member?.user.name || 'Member',
@@ -369,7 +416,7 @@ function AddExpenseForm() {
       } else if (splitType === 'EXACT') {
         let sumMinor = 0;
         calculatedSplits = activeParticipantIds.map((id) => {
-          const member = (activeGroup.members || []).find((m) => m.userId === id);
+          const member = collectiveMembers.find((m) => m.userId === id);
           const val = Math.round((parseFloat(exactAmounts[id] || '0') || 0) * 100);
           sumMinor += val;
           return {
@@ -393,7 +440,7 @@ function AddExpenseForm() {
         let maxVal = -1;
 
         calculatedSplits = activeParticipantIds.map((id, idx) => {
-          const member = (activeGroup.members || []).find((m) => m.userId === id);
+          const member = collectiveMembers.find((m) => m.userId === id);
           const pct = parseFloat(percentages[id] || '0') || 0;
           sumPct += pct;
           if (pct > maxVal) {
@@ -428,12 +475,6 @@ function AddExpenseForm() {
   const amountPaidByUser = isPayer ? totalAmountMinor : 0;
   const userNetBalance = amountPaidByUser - myShare;
 
-  // Active owed members list for Full Amount mode
-  const activeDebtorIds =
-    splitMode === 'GROUP'
-      ? Object.keys(selectedMembers).filter((id) => selectedMembers[id] && id !== effectivePayerId)
-      : [];
-
   // Mutation
   const createExpenseMutation = useMutation({
     mutationFn: (payload: any) =>
@@ -442,14 +483,23 @@ function AddExpenseForm() {
         body: JSON.stringify(payload)
       }),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trips'] });
+      queryClient.invalidateQueries({ queryKey: ['trip', selectedTripId || activeTrip?.id] });
+      queryClient.invalidateQueries({ queryKey: ['trip-expenses', selectedTripId || activeTrip?.id] });
+      queryClient.invalidateQueries({ queryKey: ['trip-balances', selectedTripId || activeTrip?.id] });
       queryClient.invalidateQueries({ queryKey: ['friends'] });
+      queryClient.invalidateQueries({ queryKey: ['friend-details'] });
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['group-expenses'] });
       queryClient.invalidateQueries({ queryKey: ['group-balances'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
 
-      if (splitMode === 'GROUP' && selectedGroupId) {
+      if (splitMode === 'TRIP' && (selectedTripId || activeTrip?.id)) {
+        router.push(`/trips/${selectedTripId || activeTrip?.id}`);
+      } else if (splitMode === 'GROUP' && selectedGroupId) {
         router.push(`/groups/${selectedGroupId}`);
+      } else if (splitMode === 'FRIEND' && selectedFriendId) {
+        router.push(`/friends/${selectedFriendId}`);
       } else {
         router.push('/dashboard');
       }
@@ -463,12 +513,16 @@ function AddExpenseForm() {
     e.preventDefault();
     if (totalAmountMinor <= 0 || validationError || calculatedSplits.length === 0) return;
 
+    const selectedDateObj = expenseDate ? new Date(`${expenseDate}T12:00:00`) : new Date();
+
     const payload = {
       groupId: splitMode === 'GROUP' ? selectedGroupId : null,
+      tripId: splitMode === 'TRIP' ? (selectedTripId || activeTrip?.id || null) : null,
       description: description.trim(),
       totalAmount: totalAmountMinor,
       splitType,
       paidBy: effectivePayerId,
+      expenseDate: selectedDateObj.toISOString(),
       splits: calculatedSplits.map((s) => ({
         userId: s.userId,
         amountOwed: s.amountOwed,
@@ -503,19 +557,19 @@ function AddExpenseForm() {
         </div>
       )}
 
-      {/* Target Selector: 1-to-1 Friend or Group */}
+      {/* Target Selector: Trip, Group, or 1-to-1 Friend */}
       <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl mb-6">
         <button
           type="button"
-          onClick={() => setSplitMode('FRIEND')}
+          onClick={() => setSplitMode('TRIP')}
           className={`flex-1 py-2.5 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-            splitMode === 'FRIEND'
+            splitMode === 'TRIP'
               ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
           }`}
         >
-          <User className="w-4 h-4" />
-          <span>With Friend (1-on-1)</span>
+          <Compass className="w-4 h-4 text-emerald-500" />
+          <span>Trip</span>
         </button>
         <button
           type="button"
@@ -527,44 +581,56 @@ function AddExpenseForm() {
           }`}
         >
           <Users className="w-4 h-4" />
-          <span>In a Group</span>
+          <span>Group</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setSplitMode('FRIEND')}
+          className={`flex-1 py-2.5 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            splitMode === 'FRIEND'
+              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
+          }`}
+        >
+          <User className="w-4 h-4" />
+          <span>1-on-1 Friend</span>
         </button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Recipient / Group Choice */}
-        {splitMode === 'FRIEND' ? (
+        {/* Recipient / Space Choice */}
+        {splitMode === 'TRIP' ? (
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-              Choose Friend
+              Choose Trip
             </label>
-            {friendsLoading ? (
+            {tripsLoading ? (
               <div className="h-11 bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse"></div>
-            ) : !friends || friends.length === 0 ? (
-              <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-center">
-                <p className="text-xs text-amber-800 dark:text-amber-300 mb-2">No friends found yet.</p>
+            ) : !trips || trips.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 text-center">
+                <p className="text-xs text-emerald-800 dark:text-emerald-300 mb-2">No active trips yet.</p>
                 <Link
-                  href="/friends"
-                  className="inline-block px-3 py-1.5 bg-amber-600 text-white rounded-xl text-xs font-semibold"
+                  href="/trips"
+                  className="inline-block px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold"
                 >
-                  Add a friend by email
+                  Create a Trip
                 </Link>
               </div>
             ) : (
               <select
-                value={selectedFriendId}
-                onChange={(e) => setSelectedFriendId(e.target.value)}
+                value={selectedTripId || activeTrip?.id}
+                onChange={(e) => setSelectedTripId(e.target.value)}
                 className="w-full px-3.5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                {friends.map((f) => (
-                  <option key={f.friendId} value={f.friendId}>
-                    {f.friend.name} ({f.friend.email})
+                {trips.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    🌴 {t.name} ({t.inviteCode}) — {t.members?.length || 1} members
                   </option>
                 ))}
               </select>
             )}
           </div>
-        ) : (
+        ) : splitMode === 'GROUP' ? (
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
               Choose Group
@@ -595,6 +661,37 @@ function AddExpenseForm() {
               </select>
             )}
           </div>
+        ) : (
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+              Choose Friend
+            </label>
+            {friendsLoading ? (
+              <div className="h-11 bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse"></div>
+            ) : !friends || friends.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-center">
+                <p className="text-xs text-amber-800 dark:text-amber-300 mb-2">No friends found yet.</p>
+                <Link
+                  href="/friends"
+                  className="inline-block px-3 py-1.5 bg-amber-600 text-white rounded-xl text-xs font-semibold"
+                >
+                  Add a friend by email
+                </Link>
+              </div>
+            ) : (
+              <select
+                value={selectedFriendId}
+                onChange={(e) => setSelectedFriendId(e.target.value)}
+                className="w-full px-3.5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {friends.map((f) => (
+                  <option key={f.friendId} value={f.friendId}>
+                    {f.friend.name} ({f.friend.email})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         )}
 
         {/* Description */}
@@ -606,29 +703,71 @@ function AddExpenseForm() {
             type="text"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="e.g. Dinner, Cab, Coffee, Groceries"
+            placeholder="e.g. Hotel, Dinner, Cab, Tickets, Groceries"
             required
             className="w-full px-3.5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
           />
         </div>
 
-        {/* Amount */}
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-            Total Amount (₹)
-          </label>
-          <div className="relative">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-base font-bold text-slate-400">₹</span>
-            <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              value={amountStr}
-              onChange={(e) => setAmountStr(e.target.value)}
-              placeholder="0.00"
-              required
-              className="w-full pl-8 pr-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-base font-bold text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-            />
+        {/* Amount & Expense Date */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+              Total Amount (₹)
+            </label>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-base font-bold text-slate-400">₹</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={amountStr}
+                onChange={(e) => setAmountStr(e.target.value)}
+                placeholder="0.00"
+                required
+                className="w-full pl-8 pr-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-base font-bold text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Expense Date
+              </label>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setQuickDate(0)}
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-colors ${
+                    expenseDate === getTodayString()
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-semibold'
+                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200'
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuickDate(1)}
+                  className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200 transition-colors"
+                >
+                  Yesterday
+                </button>
+              </div>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                <Calendar className="w-4 h-4" />
+              </span>
+              <input
+                type="date"
+                value={expenseDate}
+                onChange={(e) => setExpenseDate(e.target.value)}
+                required
+                className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all cursor-pointer"
+              />
+            </div>
           </div>
         </div>
 
@@ -652,7 +791,7 @@ function AddExpenseForm() {
               onChange={(e) => setPaidBy(e.target.value)}
               className="w-full px-3.5 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
-              {(activeGroup?.members || []).map((m) => (
+              {collectiveMembers.map((m) => (
                 <option key={m.userId} value={m.userId}>
                   {m.user.name} {m.userId === user?.id ? '(You paid)' : 'paid the bill'}
                 </option>
@@ -682,53 +821,46 @@ function AddExpenseForm() {
                 onClick={() => setSplitType(type)}
                 className={`py-2 px-1 text-center rounded-xl border transition-all ${
                   splitType === type
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-500 dark:border-emerald-500 shadow-sm'
-                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                    ? 'border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-300 font-bold shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                 }`}
               >
-                <span className="block text-xs font-bold">{label}</span>
-                <span className={`block text-[10px] mt-0.5 ${splitType === type ? 'text-slate-300 dark:text-emerald-100' : 'text-slate-400'}`}>
-                  {hint}
-                </span>
+                <div className="text-xs">{label}</div>
+                <div className="text-[9px] text-slate-400 font-normal">{hint}</div>
               </button>
             ))}
           </div>
         </div>
 
-        {/* 1. FRIEND MODE - FULL AMOUNT */}
-        {splitMode === 'FRIEND' && activeFriend && user && splitType === 'FULL_AMOUNT' && (
-          <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/40 space-y-2">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
-                &ldquo;I paid the full amount for someone else.&rdquo;
+        {/* 1. FRIEND MODE - EQUAL */}
+        {splitMode === 'FRIEND' && activeFriend && user && splitType === 'EQUAL' && (
+          <div className="p-4 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-slate-600 dark:text-slate-300">Your Share (50%)</span>
+              <span className="font-bold text-slate-900 dark:text-white">
+                {formatMinorCurrency(calculatedSplits.find((s) => s.userId === user.id)?.amountOwed || 0)}
               </span>
             </div>
-            <p className="text-xs text-emerald-800 dark:text-emerald-300">
-              {isPayer
-                ? `You paid the entire ${formatMinorCurrency(totalAmountMinor || 0)}. ${activeFriend.friend.name} owes you the full 100%.`
-                : `${activeFriend.friend.name} paid the entire ${formatMinorCurrency(totalAmountMinor || 0)}. You owe ${activeFriend.friend.name} the full 100%.`}
-            </p>
-            <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-emerald-100 dark:border-emerald-800/40 flex items-center justify-between text-xs">
-              <span className="font-semibold text-slate-700 dark:text-slate-300">
-                {isPayer ? `${activeFriend.friend.name}'s share` : 'Your share'}
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-slate-600 dark:text-slate-300">
+                {activeFriend.friend.name}&apos;s Share (50%)
               </span>
-              <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
-                {formatMinorCurrency(totalAmountMinor || 0)} (100%)
+              <span className="font-bold text-slate-900 dark:text-white">
+                {formatMinorCurrency(calculatedSplits.find((s) => s.userId === activeFriend.friendId)?.amountOwed || 0)}
               </span>
             </div>
           </div>
         )}
 
-        {/* 2. FRIEND MODE - CUSTOM (EXACT) */}
+        {/* 2. FRIEND MODE - CUSTOM / EXACT */}
         {splitMode === 'FRIEND' && activeFriend && user && splitType === 'EXACT' && (
           <div className="p-4 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Custom Responsibility Amounts (₹)
+                Custom Exact Amounts (₹)
               </label>
               <span className="text-[11px] text-slate-500">
-                Total: {formatMinorCurrency(totalAmountMinor)}
+                Total: {formatMinorCurrency(totalAmountMinor || 0)}
               </span>
             </div>
 
@@ -850,27 +982,27 @@ function AddExpenseForm() {
           </div>
         )}
 
-        {/* 4. GROUP MODE - FULL AMOUNT */}
-        {splitMode === 'GROUP' && activeGroup && splitType === 'FULL_AMOUNT' && (
+        {/* 4. COLLECTIVE (TRIP / GROUP) MODE - FULL AMOUNT (Section 10 & 11) */}
+        {isCollective && activeCollective && splitType === 'FULL_AMOUNT' && (
           <div className="space-y-4">
             <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/40 space-y-1.5">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
-                  &ldquo;I paid the full amount for someone else.&rdquo;
+                  Full Amount: Paid for someone else
                 </span>
               </div>
               <p className="text-xs text-emerald-800 dark:text-emerald-300">
-                {payerName} paid the entire {formatMinorCurrency(totalAmountMinor || 0)}. Select the member(s) who owe this expense below.
+                {payerName} paid the entire {formatMinorCurrency(totalAmountMinor || 0)}. Select the member who owes this expense below.
               </p>
             </div>
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-                Owed by (Who should pay back {payerName}?)
+                Who owes this bill to {payerName}?
               </label>
               <div className="space-y-2">
-                {(activeGroup.members || [])
+                {collectiveMembers
                   .filter((m) => m.userId !== effectivePayerId)
                   .map((m) => {
                     const isSelected = !!selectedMembers[m.userId];
@@ -900,14 +1032,9 @@ function AddExpenseForm() {
 
                         {isSelected && (
                           <div className="text-right">
-                            <span className="text-xs font-bold text-slate-900 dark:text-white">
-                              {splitResult ? formatMinorCurrency(splitResult.amountOwed) : '₹0'}
+                            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                              {splitResult ? `${m.user.name} owes ${formatMinorCurrency(splitResult.amountOwed)}` : '₹0'}
                             </span>
-                            {splitResult?.pct !== undefined && (
-                              <span className="block text-[10px] text-slate-400">
-                                {splitResult.pct}%
-                              </span>
-                            )}
                           </div>
                         )}
                       </div>
@@ -915,112 +1042,43 @@ function AddExpenseForm() {
                   })}
               </div>
             </div>
-
-            {/* If multiple debtors are selected, show sub-split mode options */}
-            {activeDebtorIds.length > 1 && (
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Split among owed members:
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {(['EQUAL', 'PERCENTAGE', 'CUSTOM'] as const).map((sub) => (
-                      <button
-                        key={sub}
-                        type="button"
-                        onClick={() => setFullAmountSubMode(sub)}
-                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all ${
-                          fullAmountSubMode === sub
-                            ? 'bg-slate-900 text-white dark:bg-emerald-500 shadow-sm'
-                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                        }`}
-                      >
-                        {sub === 'EQUAL' ? 'Equal' : sub === 'PERCENTAGE' ? 'Percentage' : 'Custom'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {fullAmountSubMode === 'CUSTOM' && (
-                  <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-slate-700/60">
-                    {activeDebtorIds.map((id) => {
-                      const member = (activeGroup.members || []).find((m) => m.userId === id);
-                      return (
-                        <div key={id} className="flex items-center justify-between gap-3 text-xs">
-                          <span className="font-medium text-slate-700 dark:text-slate-300 truncate">
-                            {member?.user.name} {id === user?.id && '(You)'}
-                          </span>
-                          <div className="relative w-32">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">₹</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={exactAmounts[id] || ''}
-                              onChange={(e) =>
-                                setExactAmounts((prev) => ({
-                                  ...prev,
-                                  [id]: e.target.value
-                                }))
-                              }
-                              placeholder="0.00"
-                              className="w-full pl-6 pr-2 py-1.5 text-xs text-right font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {fullAmountSubMode === 'PERCENTAGE' && (
-                  <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-slate-700/60">
-                    {activeDebtorIds.map((id) => {
-                      const member = (activeGroup.members || []).find((m) => m.userId === id);
-                      const splitResult = calculatedSplits.find((s) => s.userId === id);
-                      return (
-                        <div key={id} className="flex items-center justify-between gap-3 text-xs">
-                          <div>
-                            <span className="font-medium text-slate-700 dark:text-slate-300 block">
-                              {member?.user.name} {id === user?.id && '(You)'}
-                            </span>
-                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                              → {splitResult ? formatMinorCurrency(splitResult.amountOwed) : '₹0'}
-                            </span>
-                          </div>
-                          <div className="relative w-24">
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={percentages[id] || ''}
-                              onChange={(e) =>
-                                setPercentages((prev) => ({
-                                  ...prev,
-                                  [id]: e.target.value
-                                }))
-                              }
-                              placeholder="50"
-                              className="w-full pr-6 pl-2 py-1.5 text-xs text-right font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                            />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
 
-        {/* 5. GROUP MODE - EQUAL / CUSTOM / PERCENTAGE */}
-        {splitMode === 'GROUP' && activeGroup && splitType !== 'FULL_AMOUNT' && (
+        {/* 5. COLLECTIVE (TRIP / GROUP) MODE - EQUAL / CUSTOM / PERCENTAGE */}
+        {isCollective && activeCollective && splitType !== 'FULL_AMOUNT' && (
           <div className="pt-1">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-              Split Between Group Members
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Who is this expense for?
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const all: Record<string, boolean> = {};
+                    collectiveMembers.forEach((m) => {
+                      all[m.userId] = true;
+                    });
+                    setSelectedMembers(all);
+                  }}
+                  className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:underline"
+                >
+                  Select All
+                </button>
+                <span className="text-slate-300">•</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMembers({})}
+                  className="text-[11px] font-medium text-slate-400 hover:underline"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
             <div className="space-y-2">
-              {(activeGroup.members || []).map((m) => {
+              {collectiveMembers.map((m) => {
                 const isSelected = !!selectedMembers[m.userId];
                 const splitResult = calculatedSplits.find((s) => s.userId === m.userId);
 
@@ -1063,7 +1121,7 @@ function AddExpenseForm() {
 
                         {splitType === 'EXACT' && (
                           <div className="relative">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">₹</span>
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">₹</span>
                             <input
                               type="number"
                               step="0.01"
@@ -1075,7 +1133,7 @@ function AddExpenseForm() {
                                 }))
                               }
                               placeholder="0.00"
-                              className="w-full pl-5 pr-2 py-1.5 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                              className="w-full pl-6 pr-2 py-1 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
                             />
                           </div>
                         )}
@@ -1093,7 +1151,7 @@ function AddExpenseForm() {
                                 }))
                               }
                               placeholder="0"
-                              className="w-full pr-5 pl-2 py-1.5 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                              className="w-full pr-6 pl-2 py-1 text-xs text-right font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
                             />
                             <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
                           </div>
@@ -1107,121 +1165,56 @@ function AddExpenseForm() {
           </div>
         )}
 
-        {/* Live 4-Way Balance Breakdown Card */}
-        {totalAmountMinor > 0 && calculatedSplits.length > 0 && (
-          <div className="p-4 rounded-3xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 space-y-3.5">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Clear Balance Breakdown
-              </h4>
-              <span className="text-[11px] font-semibold text-slate-400">
-                Total: {formatMinorCurrency(totalAmountMinor)}
-              </span>
-            </div>
-
-            {/* Distinguish all 4 key accounting metrics clearly */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-              <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
-                <span className="text-[10px] text-slate-400 block font-medium">Paid by</span>
-                <span className="font-bold text-slate-900 dark:text-white truncate block mt-0.5">
-                  {payerName}
-                </span>
-                <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300">
-                  {formatMinorCurrency(totalAmountMinor)}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
-                <span className="text-[10px] text-slate-400 block font-medium">Your share</span>
-                <span className="font-bold text-slate-900 dark:text-white block mt-0.5">
-                  {formatMinorCurrency(myShare)}
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {totalAmountMinor > 0 ? `${((myShare / totalAmountMinor) * 100).toFixed(0)}% of total` : '0%'}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
-                <span className="text-[10px] text-slate-400 block font-medium">You owe</span>
-                <span className="font-bold text-rose-600 dark:text-rose-400 block mt-0.5">
-                  {userNetBalance < 0 ? formatMinorCurrency(Math.abs(userNetBalance)) : '₹0'}
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {userNetBalance < 0 ? `to ${payerName}` : 'Settled'}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
-                <span className="text-[10px] text-slate-400 block font-medium">You are owed</span>
-                <span className="font-bold text-emerald-600 dark:text-emerald-400 block mt-0.5">
-                  {userNetBalance > 0 ? formatMinorCurrency(userNetBalance) : '₹0'}
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {userNetBalance > 0 ? 'from others' : 'None'}
-                </span>
-              </div>
-            </div>
-
-            {/* Individual Settlements Summary for this expense */}
-            <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-xs">
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1.5">
-                Expense Settlement Result
-              </span>
-              <div className="space-y-1.5">
-                {calculatedSplits
-                  .filter((s) => s.userId !== effectivePayerId && s.amountOwed > 0)
-                  .map((s) => (
-                    <div key={s.userId} className="flex items-center justify-between text-xs py-0.5">
-                      <span className="text-slate-700 dark:text-slate-300">
-                        <strong className="text-slate-900 dark:text-white font-semibold">
-                          {s.userId === user?.id ? 'You' : s.name}
-                        </strong>{' '}
-                        owes{' '}
-                        <strong className="text-slate-900 dark:text-white font-semibold">
-                          {payerName}
-                        </strong>
-                      </span>
-                      <span className="font-bold text-slate-900 dark:text-white">
-                        {formatMinorCurrency(s.amountOwed)}
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Validation Error Banner */}
+        {/* Validation Errors */}
         {validationError && (
-          <div className="p-3.5 bg-amber-50 text-amber-800 text-xs font-medium rounded-2xl border border-amber-200">
-            ⚠️ {validationError}
+          <div className="p-3 bg-rose-50 text-rose-700 text-xs font-medium rounded-xl border border-rose-200 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{validationError}</span>
           </div>
         )}
 
-        {/* Submit Action */}
+        {/* Financial Summary Card */}
+        {totalAmountMinor > 0 && !validationError && (
+          <div className="p-4 rounded-2xl bg-slate-900 text-white shadow-md flex items-center justify-between">
+            <div>
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">
+                Your Net Balance Change
+              </span>
+              <span className="text-base font-bold">
+                {userNetBalance > 0 ? (
+                  <span className="text-emerald-400">+{formatMinorCurrency(userNetBalance)} (You will get back)</span>
+                ) : userNetBalance < 0 ? (
+                  <span className="text-rose-400">-{formatMinorCurrency(Math.abs(userNetBalance))} (You will owe)</span>
+                ) : (
+                  <span className="text-slate-300">₹0.00 (Even)</span>
+                )}
+              </span>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">Your Share</span>
+              <span className="text-sm font-semibold">{formatMinorCurrency(myShare)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Submit Button */}
         <button
           type="submit"
           disabled={createExpenseMutation.isPending || totalAmountMinor <= 0 || !!validationError}
-          className="w-full py-4 px-4 bg-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-40 disabled:pointer-events-none mt-4"
+          className="w-full py-3.5 bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-500 text-white rounded-2xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
         >
-          {createExpenseMutation.isPending ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <>
-              <Check className="w-5 h-5" />
-              <span>Add Expense</span>
-            </>
-          )}
+          {createExpenseMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+          <span>Save Expense</span>
         </button>
       </form>
     </div>
   );
 }
 
-export default function AddExpensePage() {
+export default function NewExpensePage() {
   return (
     <AppShell>
-      <Suspense fallback={<div className="p-8 text-center text-xs">Loading form...</div>}>
+      <Suspense fallback={<div className="p-6 text-center text-xs text-slate-400">Loading expense form...</div>}>
         <AddExpenseForm />
       </Suspense>
     </AppShell>

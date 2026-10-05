@@ -7,8 +7,26 @@ export interface SafeUser {
   telegramChatId: string | null;
   telegramUsername: string | null;
   telegramConnected: boolean;
+  telegramConnectedAt?: string | null;
+  notifyExpenseAdded?: boolean;
+  notifyMonthlySummary?: boolean;
+  notifySettlements?: boolean;
+  notifyPasswordReset?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TelegramStatusResponse {
+  connected: boolean;
+  telegramUsername: string | null;
+  telegramConnectedAt: string | null;
+  botUsername?: string;
+  preferences: {
+    notifyExpenseAdded: boolean;
+    notifyMonthlySummary: boolean;
+    notifySettlements: boolean;
+    notifyPasswordReset: boolean;
+  };
 }
 
 export interface GroupMemberItem {
@@ -69,6 +87,7 @@ export interface ExpenseSplitItem {
 export interface ExpenseItem {
   id: string;
   groupId: string | null;
+  tripId: string | null;
   description: string;
   totalAmount: number; // In minor units (paise/cents)
   splitType: SplitType;
@@ -90,12 +109,84 @@ export interface CreateExpenseSplitInput {
 
 export interface CreateExpensePayload {
   groupId?: string | null;
+  tripId?: string | null;
   description: string;
   totalAmount: number; // In minor units
   splitType: SplitType;
   paidBy: string;
   expenseDate?: string;
   splits: CreateExpenseSplitInput[];
+}
+
+export interface TripMemberItem {
+  id: string;
+  tripId: string;
+  userId: string;
+  role: 'ADMIN' | 'MEMBER';
+  joinedAt: string;
+  user: SafeUser;
+}
+
+export interface TripItem {
+  id: string;
+  name: string;
+  description: string | null;
+  inviteCode: string;
+  isArchived: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  members: TripMemberItem[];
+  _count?: {
+    expenses: number;
+    members: number;
+  };
+}
+
+export interface TripPreviewResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  inviteCode: string;
+  memberCount: number;
+  creatorName: string;
+  isMember: boolean;
+}
+
+export interface JoinTripResponse {
+  trip: TripItem;
+  alreadyMember: boolean;
+  message: string;
+}
+
+export interface TripBalancesResponse {
+  tripId: string;
+  totalExpenses: number;
+  youPaid: number;
+  yourShare: number;
+  youAreOwed: number;
+  youOwe: number;
+  netBalance: number;
+  balances: UserBalance[];
+}
+
+export interface TripSettlementItem {
+  id: string;
+  tripId: string;
+  fromUserId: string;
+  fromUser: SafeUser;
+  toUserId: string;
+  toUser: SafeUser;
+  amount: number;
+  settledAt: string;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface TripSettlementsResponse {
+  tripId: string;
+  settlements: SettlementTransfer[];
+  recordedSettlements: TripSettlementItem[];
 }
 
 export interface UserBalance {
@@ -142,6 +233,47 @@ export interface TelegramStatusResponse {
   connected: boolean;
   telegramUsername: string | null;
   botUsername?: string;
+}
+
+export interface SettlementItem {
+  id: string;
+  fromUserId: string;
+  fromUserName: string;
+  toUserId: string;
+  toUserName: string;
+  amount: number; // minor units
+  settledAt: string;
+  note?: string | null;
+  createdAt: string;
+}
+
+export interface FriendRelationshipExpenseItem {
+  id: string;
+  description: string;
+  totalAmount: number;
+  paidBy: string;
+  payerName: string;
+  expenseDate: string;
+  groupId: string | null;
+  groupName?: string;
+  userShare: number;
+  friendShare: number;
+  userPaidAmount: number;
+  friendPaidAmount: number;
+  userNet: number; // positive = user is owed, negative = user owes from this expense
+  friendNet: number;
+}
+
+export interface FriendRelationshipDetails {
+  friend: SafeUser;
+  netBalance: number; // In minor units: positive = they owe you, negative = you owe them
+  totalPaidByUser: number;
+  totalPaidByFriend: number;
+  userShare: number;
+  friendShare: number;
+  totalExpenses: number;
+  expenses: FriendRelationshipExpenseItem[];
+  settlements: SettlementItem[];
 }
 
 export interface ApiSuccess<T> {

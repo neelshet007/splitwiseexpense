@@ -58,7 +58,7 @@ export class AuthController {
       // Generic response to avoid email enumeration
       return res.status(200).json({
         success: true,
-        message: 'If an account exists with that email, a password reset link has been dispatched.'
+        message: "If an account exists with this email and Telegram is connected, you'll receive a password reset message on Telegram."
       });
     } catch (error) {
       next(error);

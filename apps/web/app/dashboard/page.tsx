@@ -18,8 +18,11 @@ import {
   Users,
   UserCheck,
   Heart,
-  Plus
+  Plus,
+  Compass,
+  Palmtree
 } from 'lucide-react';
+import { TripItem } from '@splitwise/types';
 
 function getGreeting(name: string): string {
   const hour = new Date().getHours();
@@ -47,6 +50,12 @@ export default function DashboardPage() {
   const { data: summary, isLoading, error, refetch } = useQuery<DashboardSummary>({
     queryKey: ['dashboard-summary'],
     queryFn: () => apiFetch<DashboardSummary>('/api/dashboard/summary'),
+    enabled: !!user
+  });
+
+  const { data: userTrips } = useQuery<TripItem[]>({
+    queryKey: ['trips'],
+    queryFn: () => apiFetch<TripItem[]>('/api/trips'),
     enabled: !!user
   });
 
@@ -144,6 +153,61 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Trips Section */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+              <Compass className="w-4 h-4 text-emerald-500" />
+              <span>Trips</span>
+            </h2>
+            <Link
+              href="/trips"
+              className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center"
+            >
+              <span>See all ({(userTrips || []).length})</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          {(!userTrips || userTrips.length === 0) ? (
+            <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 text-center">
+              <p className="text-xs text-slate-600 dark:text-slate-300 mb-2">
+                Going on a vacation, road trip, or outing? Track expenses together.
+              </p>
+              <Link
+                href="/trips"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition-colors shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Plan a Trip</span>
+              </Link>
+            </div>
+          ) : (
+            <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
+              {userTrips.map((t) => (
+                <Link
+                  key={t.id}
+                  href={`/trips/${t.id}`}
+                  className="flex-shrink-0 w-40 p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-emerald-500/60 transition-all group"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-lg">🌴</span>
+                    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                      {t.inviteCode}
+                    </span>
+                  </div>
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-600 transition-colors">
+                    {t.name}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    {t.members?.length || 1} members
+                  </p>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* 1. Friends Section (Prioritizes 1-to-1 relationships) */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
@@ -178,17 +242,20 @@ export default function DashboardPage() {
               {(summary.friends || []).slice(0, 4).map((f) => (
                 <div
                   key={f.id}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800"
+                  className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700 transition-all group"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold flex items-center justify-center text-xs">
+                  <Link
+                    href={`/friends/${f.friendId}`}
+                    className="flex items-center gap-3 flex-1 min-w-0"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold flex items-center justify-center text-xs flex-shrink-0 group-hover:scale-105 transition-transform">
                       {f.friend.name.charAt(0)}
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-900 dark:text-white">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                         {f.friend.name}
                       </p>
-                      <p className="text-[10px] text-slate-400">
+                      <p className="text-[10px] text-slate-400 truncate">
                         {f.netBalance > 0 ? (
                           <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
                             owes you {formatMinorCurrency(f.netBalance)}
@@ -202,11 +269,11 @@ export default function DashboardPage() {
                         )}
                       </p>
                     </div>
-                  </div>
+                  </Link>
 
                   <Link
                     href={`/expenses/new?friendId=${f.friendId}`}
-                    className="p-1.5 text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white bg-slate-50 dark:bg-slate-800 rounded-lg font-semibold"
+                    className="p-1.5 text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white bg-slate-50 dark:bg-slate-800 rounded-lg font-semibold flex-shrink-0"
                   >
                     + Split
                   </Link>

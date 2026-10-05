@@ -9,7 +9,7 @@ export function initializeMonthlySummaryCron() {
     return;
   }
 
-  logger.info(`Initializing monthly summary scheduler: "${env.MONTHLY_SUMMARY_CRON}" (timezone: ${env.TIMEZONE})`);
+  logger.debug(`Initializing monthly summary scheduler: "${env.MONTHLY_SUMMARY_CRON}" (timezone: ${env.TIMEZONE})`);
 
   cron.schedule(
     env.MONTHLY_SUMMARY_CRON,

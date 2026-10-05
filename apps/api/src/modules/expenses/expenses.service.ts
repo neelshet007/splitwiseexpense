@@ -9,7 +9,8 @@ export class ExpensesService {
   private static formatExpense(e: any): ExpenseItem {
     return {
       id: e.id,
-      groupId: e.groupId,
+      groupId: e.groupId ?? null,
+      tripId: e.tripId ?? null,
       description: e.description,
       totalAmount: e.totalAmount,
       splitType: e.splitType as SplitType,
@@ -169,10 +170,34 @@ export class ExpensesService {
     data: CreateExpenseInput
   ): Promise<ExpenseItem> {
     const targetGroupId = groupId || data.groupId || null;
+    const targetTripId = data.tripId || null;
 
-    // 1. Validate Group (if group expense) or Participants (if direct expense) inside Transaction
+    // 1. Validate Group / Trip / Participants inside Transaction
     const createdExpense = await prisma.$transaction(async (tx) => {
-      if (targetGroupId) {
+      if (targetTripId) {
+        const trip = await tx.trip.findUnique({
+          where: { id: targetTripId },
+          include: { members: true }
+        });
+
+        if (!trip) {
+          throw new NotFoundError('Trip not found');
+        }
+
+        const memberIds = new Set(trip.members.map((m) => m.userId));
+
+        // Validate Payer
+        if (!memberIds.has(data.paidBy)) {
+          throw new ValidationError('Payer must be an active member of the trip.');
+        }
+
+        // Validate all split participants
+        for (const split of data.splits) {
+          if (!memberIds.has(split.userId)) {
+            throw new ValidationError(`User ${split.userId} is not an active member of this trip.`);
+          }
+        }
+      } else if (targetGroupId) {
         const group = await tx.group.findUnique({
           where: { id: targetGroupId },
           include: { members: true }
@@ -214,6 +239,7 @@ export class ExpensesService {
       return tx.expense.create({
         data: {
           groupId: targetGroupId,
+          tripId: targetTripId,
           description: data.description.trim(),
           totalAmount: data.totalAmount,
           splitType: data.splitType,
@@ -360,7 +386,7 @@ export class ExpensesService {
   static async deleteExpense(expenseId: string, currentUserId: string): Promise<void> {
     const existing = await prisma.expense.findUnique({
       where: { id: expenseId },
-      include: { group: true }
+      include: { group: true, trip: true }
     });
 
     if (!existing) {
@@ -368,13 +394,15 @@ export class ExpensesService {
     }
 
     const isGroupOwner = existing.group && existing.group.createdBy === currentUserId;
+    const isTripAdmin = existing.trip && existing.trip.createdBy === currentUserId;
 
     if (
       existing.paidBy !== currentUserId &&
       existing.createdBy !== currentUserId &&
-      !isGroupOwner
+      !isGroupOwner &&
+      !isTripAdmin
     ) {
-      throw new ForbiddenError('Only the payer, creator, or group owner can delete this expense.');
+      throw new ForbiddenError('Only the payer, creator, or admin can delete this expense.');
     }
 
     await prisma.expense.delete({
